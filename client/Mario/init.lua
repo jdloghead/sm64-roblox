@@ -386,7 +386,7 @@ function Mario.GetFloorType(m: Mario): number
 		end
 
 		-- Lava surface check
-		if material == Enum.Material.CrackedLava then
+		if material == Enum.Material.CrackedLava or instance:HasTag("Lava") then
 			return SurfaceClass.BURNING
 		end
 
@@ -1572,6 +1572,9 @@ function Mario.UpdateGeometryInputs(m: Mario)
 		if m.Position.Y < m.GasLevel - 100 then
 			m.Input:Add(InputFlags.IN_POISON_GAS)
 		end
+	else
+		-- Mario gets "killed" here when no floor has been found
+		-- LevelTriggerWarp(m, WARP_OP_DEATH);
 	end
 end
 
@@ -1882,7 +1885,7 @@ function Mario.UpdateQuicksand(m: Mario, SinkingSpeed)
 			if m.QuicksandDepth >= 25 then
 				m.QuicksandDepth = 25
 			end
-		elseif FloorType == SurfaceClass.MOVING_QUICKSAND then
+		elseif FloorType == SurfaceClass.MOVING_QUICKSAND or FloorType == SurfaceClass.QUICKSAND then
 			m.QuicksandDepth += SinkingSpeed
 			if m.QuicksandDepth >= 60 then
 				m.QuicksandDepth = 60
@@ -1892,7 +1895,7 @@ function Mario.UpdateQuicksand(m: Mario, SinkingSpeed)
 			if m.QuicksandDepth >= 160 then
 				return m:DropAndSetAction(Action.QUICKSAND_DEATH, 0)
 			end
-		elseif FloorType == SurfaceClass.INSTANT_QUICKSAND then
+		elseif FloorType == SurfaceClass.INSTANT_QUICKSAND or FloorType == SurfaceClass.INSTANT_MOVING_QUICKSAND then
 			return m:DropAndSetAction(Action.QUICKSAND_DEATH, 0)
 		else
 			m.QuicksandDepth = 0

@@ -63,10 +63,30 @@ local TagParams: { [string]: RaycastParams } = {}
 local GetTagParams: (string) -> RaycastParams
 do
 	-- Add new parts to filters
+	local function append(params: RaycastParams, object: BasePart)
+		params:AddToFilter(object)
+
+		local removing: RBXScriptConnection
+		removing = object.AncestryChanged:Connect(function()
+			if object:IsDescendantOf(workspace) then
+				return
+			end
+
+			-- :(
+			local filter = params.FilterDescendantsInstances
+			table.remove(filter, table.find(filter, object))
+			params.FilterDescendantsInstances = filter
+
+			-- Goodbye.
+			removing:Disconnect()
+			removing = nil
+		end)
+	end
+
 	workspace.DescendantAdded:Connect(function(part)
 		for tag, params in TagParams do
 			if part:HasTag(tag) and part:IsA("BasePart") then
-				params:AddToFilter(part)
+				append(params, part)
 			end
 		end
 	end)
@@ -80,30 +100,10 @@ do
 		new.FilterType = Enum.RaycastFilterType.Include
 		TagParams[tag] = new
 
-		local function append(object: Instance)
-			if object:IsA("BasePart") and object:HasTag(tag) then
-				new:AddToFilter(object)
-
-				local removing: RBXScriptConnection
-				removing = object.AncestryChanged:Connect(function()
-					if object:IsDescendantOf(workspace) then
-						return
-					end
-
-					-- :(
-					local filter = new.FilterDescendantsInstances
-					table.remove(filter, table.find(filter, object))
-					new.FilterDescendantsInstances = filter
-
-					-- Goodbye.
-					removing:Disconnect()
-					removing = nil
-				end)
-			end
-		end
-
 		for _, object: Instance in CollectionService:GetTagged(tag) do
-			append(object)
+			if object:IsA("BasePart") and object:IsDescendantOf(workspace) then
+				append(new, object, tag)
+			end
 		end
 
 		return new
