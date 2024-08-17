@@ -404,6 +404,42 @@ local function applyLandingAccel(m: Mario, frictionFactor: number)
 	return stopped
 end
 
+local function updateShellSpeed(m: Mario)
+	local maxTargetSpeed, targetSpeed = 64, nil
+
+	if m.FloorHeight < m.WaterLevel then
+		m.FloorHeight = m.WaterLevel
+		m.Floor = m.WaterSurfacePseudoFloor
+	end
+
+	if m.Floor ~= nil and m:GetFloorType() == SurfaceClass.SLOW then
+		maxTargetSpeed = 48.0
+	else
+		maxTargetSpeed = 64.0
+	end
+
+	targetSpeed = math.clamp(m.IntendedMag * 2.0, 24.0, maxTargetSpeed)
+
+	if m.ForwardVel <= 0.0 then
+		m.ForwardVel += 1.1
+	elseif m.ForwardVel <= targetSpeed then
+		m.ForwardVel += 1.1 - m.ForwardVel / 58.0
+	elseif m.Floor and m.Floor.Normal.Y >= 0.95 then
+		m.ForwardVel -= 1.0
+	end
+
+	--! No backward speed cap (shell hyperspeed)
+	if m.ForwardVel > 64.0 then
+		m.ForwardVel = 64.0
+	end
+
+	m.FaceAngle = Util.SetY(
+		m.FaceAngle,
+		m.IntendedYaw - Util.ApproachFloat(Util.SignedShort(m.IntendedYaw - m.FaceAngle.Y), 0, 0x800)
+	)
+	applySlopeAccel(m)
+end
+
 local function applySlopeDecel(m: Mario, decelCoef: number)
 	local decel
 	local stopped = false
@@ -666,6 +702,26 @@ local function tiltBodyWalking(m: Mario, startYaw: number)
 	else
 		bodyState.TorsoAngle *= Vector3int16.new(0, 1, 0)
 	end
+end
+
+local function tiltBodyGroundShell(m: Mario, startYaw: number)
+	local bodyState = m.BodyState
+	local dYaw = Util.SignedShort(m.FaceAngle.Y - startYaw)
+
+	local tiltZ = -Util.SignedShort(dYaw * m.ForwardVel / 12.0)
+	local tiltX = Util.SignedShort(m.ForwardVel * 170.0)
+
+	tiltZ = math.clamp(tiltZ, -0x1800, 0x1800)
+	tiltX = math.clamp(tiltX, 0, 0x1000)
+
+	local torsoAngle = bodyState.TorsoAngle
+	tiltZ = Util.ApproachInt(torsoAngle.Z, tiltZ, 0x200)
+	tiltX = Util.ApproachInt(torsoAngle.X, tiltX, 0x200)
+
+	bodyState.TorsoAngle = Vector3int16.new(tiltX, torsoAngle.Y, tiltZ)
+
+	m.GfxAngle = Util.SetZ(m.GfxAngle, bodyState.TorsoAngle.Z)
+	m.GfxPos += Vector3.yAxis * 45.0
 end
 
 local function tiltBodyButtSlide(m: Mario)
@@ -1142,6 +1198,46 @@ DEF_ACTION(Action.DECELERATING, function(m: Mario)
 	return false
 end)
 
+DEF_ACTION(Action.RIDING_SHELL_GROUND, function(m: Mario)
+	local startYaw = m.FaceAngle.Y
+
+	if m.Input:Has(InputFlags.A_PRESSED) then
+		return m:SetAction(Action.RIDING_SHELL_JUMP)
+	end
+
+	if m.Input:Has(InputFlags.Z_PRESSED) then
+		-- marioStopRidingObject(m)
+		if m.ForwardVel < 24.0 then
+			m:SetForwardVel(24.0)
+		end
+		return m:SetAction(Action.CROUCH_SLIDE)
+	end
+
+	updateShellSpeed(m)
+	m:SetAnimation(m.ActionArg == 0 and Animations.START_RIDING_SHELL or Animations.RIDING_SHELL)
+
+	local stepResult = m:PerformGroundStep()
+	if stepResult == GroundStep.LEFT_GROUND then
+		m:SetAction(Action.RIDING_SHELL_FALL)
+	elseif stepResult == GroundStep.HIT_WALL then
+		-- marioStopRidingObject(m)
+		m:PlaySound(if m.Flags:Has(MarioFlags.METAL_CAP) then Sounds.ACTION_METAL_BONK else Sounds.ACTION_BONK)
+		m.ParticleFlags:Add(ParticleFlags.VERTICAL_STAR)
+		m:SetAction(Action.BACKWARD_GROUND_KB)
+	end
+
+	tiltBodyGroundShell(m, startYaw)
+	if m:GetFloorType() == SurfaceClass.BURNING then
+		-- m:PlaySound(Sounds.MOVING_RIDING_SHELL_LAVA)
+	else
+		-- m:PlaySound(Sounds.MOVING_TERRAIN_RIDING_SHELL)
+	end
+
+	m:AdjustSoundForSpeed()
+
+	return false
+end)
+
 DEF_ACTION(Action.CRAWLING, function(m: Mario)
 	if shouldBeginSliding(m) then
 		return m:SetAction(Action.BEGIN_SLIDING)
@@ -1213,7 +1309,7 @@ DEF_ACTION(Action.BURNING_GROUND, function(m: Mario)
 	m.ForwardVel = Util.ApproachFloat(m.ForwardVel, 32, 4, 1)
 
 	if m.Input:Has(InputFlags.NONZERO_ANALOG) then
-		local faceY = m.IntendedYaw - Util.ApproachFloat(m.IntendedYaw - m.FaceAngle.Y, 0, 0x600)
+		local faceY = m.IntendedYaw - Util.ApproachFloat(Util.SignedShort(m.IntendedYaw - m.FaceAngle.Y), 0, 0x600)
 		m.FaceAngle = Util.SetY(m.FaceAngle, faceY)
 	end
 

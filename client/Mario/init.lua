@@ -1091,6 +1091,11 @@ function Mario.PerformGroundQuarterStep(m: Mario, nextPos: Vector3): number
 		return GroundStep.HIT_WALL_STOP_QSTEPS
 	end
 
+	if m.Action:Has(ActionFlags.RIDING_SHELL) and m.FloorHeight <= m.WaterLevel and m.WaterSurfacePseudoFloor then
+		floorHeight = m.WaterLevel
+		floor = m.WaterSurfacePseudoFloor
+	end
+
 	if nextPos.Y > floorHeight + 100 then
 		if nextPos.Y + 160 >= ceilHeight then
 			return GroundStep.HIT_WALL_STOP_QSTEPS
@@ -1224,6 +1229,11 @@ function Mario.PerformAirQuarterStep(m: Mario, intendedPos: Vector3, stepArg: nu
 
 		m.Position = Util.SetY(m.Position, nextPos.Y)
 		return AirStep.HIT_WALL
+	end
+
+	if m.Action:Has(ActionFlags.RIDING_SHELL) and m.FloorHeight <= m.WaterLevel and m.WaterSurfacePseudoFloor then
+		floorHeight = m.WaterLevel
+		floor = m.WaterSurfacePseudoFloor
 	end
 
 	if nextPos.Y <= floorHeight then
@@ -1526,7 +1536,10 @@ function Mario.UpdateGeometryInputs(m: Mario)
 
 	if floor then
 		local gasLevel = Util.FindTaggedPlane(m.Position, "PoisonGasCloud")
+		local waterLevel, waterPseudoFloor = Util.GetWaterLevel(m.Position)
 		m.GasLevel = gasLevel
+		m.WaterLevel = waterLevel
+		m.WaterSurfacePseudoFloor = waterPseudoFloor
 
 		m.FloorAngle = Util.Atan2s(floor.Normal.Z, floor.Normal.X)
 		m.TerrainType = m:GetTerrainType()
@@ -1765,7 +1778,9 @@ function Mario.HandleSpecialFloors(m: Mario)
 	local floor = m.Floor
 	local floorType = m:GetFloorType()
 
-	if floor and not m.Action:Has(ActionFlags.AIR, ActionFlags.SWIMMING, ActionFlags.HANGING) then
+	if
+		floor and not m.Action:Has(ActionFlags.AIR, ActionFlags.SWIMMING, ActionFlags.HANGING, ActionFlags.RIDING_SHELL)
+	then
 		if floorType == SurfaceClass.BURNING then
 			if not m.Flags:Has(MarioFlags.METAL_CAP) then
 				m.HurtCounter += m.Flags:Has(MarioFlags.CAP_ON_HEAD) and 12 or 18
@@ -1867,7 +1882,7 @@ function Mario.UpdateHealth(m: Mario)
 end
 
 function Mario.UpdateQuicksand(m: Mario, SinkingSpeed)
-	if m.Flags:Has(ActionFlags.RIDING_SHELL) then
+	if m.Action:Has(ActionFlags.RIDING_SHELL) then
 		m.QuicksandDepth = 0
 	else
 		if m.QuicksandDepth < 1.1 then

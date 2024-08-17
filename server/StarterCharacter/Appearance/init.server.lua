@@ -47,7 +47,7 @@ local function onDescendantAdded(desc: Instance)
 			local canCollide = desc:GetPropertyChangedSignal("CanCollide")
 			desc.CollisionGroup = "Player"
 			desc.CanQuery = false
-			desc.CanTouch = false
+			-- desc.CanTouch = false
 			desc.Massless = true
 
 			canCollide:Connect(function()

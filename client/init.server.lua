@@ -501,8 +501,9 @@ local function onReset()
 	mario.HealCounter = 0
 	mario.HurtCounter = 0
 	mario.Health = 0x880
-	mario.SquishTimer = 0
 
+	mario.BurnTimer = 0
+	mario.SquishTimer = 0
 	mario.QuicksandDepth = 0
 
 	mario.Position = sm64
@@ -510,39 +511,6 @@ local function onReset()
 	mario.FaceAngle = Vector3int16.new()
 
 	mario:SetAction(Action.SPAWN_SPIN_AIRBORNE)
-end
-
-local function getWaterLevel(pos: Vector3)
-	-- Get water height from part planes.
-	-- Note that even if you're not inside of them, you'll still
-	-- swim there, since it's just based on the position the Raycast
-	-- landed on.
-	local waterHeightFromPlane, waterPlane = Util.FindTaggedPlane(Util.ToSM64(pos), "Water")
-	if waterPlane then
-		return waterHeightFromPlane
-	end
-
-	local terrain = workspace.Terrain
-	local voxelPos = terrain:WorldToCellPreferSolid(pos)
-
-	local voxelRegion = Region3.new(voxelPos * 4, (voxelPos + Vector3.one + (Vector3.yAxis * 3)) * 4)
-	voxelRegion = voxelRegion:ExpandToGrid(4)
-
-	local materials, occupancies = terrain:ReadVoxels(voxelRegion, 4)
-	local size: Vector3 = occupancies.Size
-	local waterLevel = -11000
-
-	for y = 1, size.Y do
-		local occupancy = occupancies[1][y][1]
-		local material = materials[1][y][1]
-
-		if occupancy >= 0.9 and material == Enum.Material.Water then
-			local top = ((voxelPos.Y * 4) + (4 * y + 2))
-			waterLevel = math.max(waterLevel, top / Util.Scale)
-		end
-	end
-
-	return waterLevel
 end
 
 local function update(dt: number)
@@ -579,11 +547,10 @@ local function update(dt: number)
 	local simSpeed = tonumber(character:GetAttribute("TimeScale") or nil) or 1
 
 	local robloxPos = Util.ToRoblox(mario.Position)
-	mario.WaterLevel = getWaterLevel(robloxPos)
 	Util.DebugWater(mario.WaterLevel)
 	Util.DebugCollisionFaces(mario.Wall, mario.Ceil, mario.Floor)
 
-	subframe += (now - lastUpdate) * (STEP_RATE * simSpeed)
+	subframe += dt * (STEP_RATE * simSpeed)
 	lastUpdate = now
 
 	if character:GetAttribute("WingCap") or Core:GetAttribute("WingCap") then
@@ -611,11 +578,12 @@ local function update(dt: number)
 		local gfxPos = Util.ToRoblox(mario.Position) + gfxPosOffset
 		gfxRot = Util.ToRotation(mario.GfxAngle)
 
-		if humanoid then
-			humanoid.CameraOffset = if gfxPosOffset == Vector3.zero
-				then humanoid.CameraOffset:Lerp(-gfxPosOffset, dt * 16)
-				else -gfxPosOffset
-		end
+		task.spawn(function()
+			RunService.RenderStepped:Wait()
+			if humanoid then
+				humanoid.CameraOffset = -gfxPosOffset
+			end
+		end)
 
 		mario.GfxPos = Vector3.zero
 		mario.GfxAngle = Vector3int16.new()

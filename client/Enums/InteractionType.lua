@@ -1,0 +1,12 @@
+--!strict
+
+return {
+	GROUND_POUND_OR_TWIRL = 0x01,
+	PUNCH = 0x02,
+	KICK = 0x04,
+	TRIP = 0x08,
+	SLIDE_KICK = 0x10,
+	FAST_ATTACK_OR_SHELL = 0x20,
+	HIT_FROM_ABOVE = 0x40,
+	HIT_FROM_BELOW = 0x80,
+}

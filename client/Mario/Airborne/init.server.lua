@@ -588,6 +588,29 @@ DEF_ACTION(Action.LONG_JUMP, function(m: Mario)
 	return false
 end)
 
+local function ridingShellAir(m: Mario)
+	m:PlayJumpSound()
+	m:PlaySound(Sounds.ACTION_TERRAIN_JUMP)
+	m:SetAnimation(Animations.JUMP_RIDING_SHELL)
+
+	updateAirWithoutTurn(m)
+
+	local stepResult = m:PerformAirStep(0)
+	if stepResult == AirStep.LANDED then
+		m:SetAction(Action.RIDING_SHELL_GROUND)
+	elseif stepResult == AirStep.HIT_WALL then
+		m:SetForwardVel(0)
+	elseif stepResult == AirStep.HIT_LAVA_WALL then
+		lavaBoostOnWall(m)
+	end
+
+	m.GfxPos += Vector3.yAxis * 42.0
+	return false
+end
+
+DEF_ACTION(Action.RIDING_SHELL_FALL, ridingShellAir)
+DEF_ACTION(Action.RIDING_SHELL_JUMP, ridingShellAir)
+
 DEF_ACTION(Action.TWIRLING, function(m: Mario)
 	local startTwirlYaw = m.TwirlYaw
 	local yawVelTarget = 0x1000
@@ -777,7 +800,7 @@ DEF_ACTION(Action.GROUND_POUND, function(m: Mario)
 end)
 
 DEF_ACTION(Action.BURNING_JUMP, function(m: Mario)
-	m:PlayMarioSound(Sounds.ACTION_TERRAIN_JUMP)
+	-- m:PlayMarioSound(Sounds.ACTION_TERRAIN_JUMP)
 	m:SetForwardVel(m.ForwardVel)
 
 	if m:PerformAirStep() == AirStep.LANDED then

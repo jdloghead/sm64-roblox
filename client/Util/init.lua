@@ -409,6 +409,40 @@ function Util.FindTaggedPlane(pos: Vector3, tag: string): (number, RaycastResult
 	return height, result
 end
 
+function Util.GetWaterLevel(pos: Vector3): (number, RaycastResult?)
+	-- Get water height from part planes.
+	-- Note that even if you're not inside of them, you'll still
+	-- swim there, since it's just based on the position the Raycast
+	-- landed on.
+	local waterHeightFromPlane, waterPlane = Util.FindTaggedPlane(pos, "Water")
+	if waterPlane then
+		return waterHeightFromPlane, waterPlane
+	end
+
+	-- Check terrain water voxels instead
+	local terrain = workspace.Terrain
+	local voxelPos = terrain:WorldToCellPreferSolid(Util.ToRoblox(pos))
+
+	local voxelRegion = Region3.new(voxelPos * 4, (voxelPos + Vector3.one + (Vector3.yAxis * 3)) * 4)
+	voxelRegion = voxelRegion:ExpandToGrid(4)
+
+	local materials, occupancies = terrain:ReadVoxels(voxelRegion, 4)
+	local size: Vector3 = occupancies.Size
+	local waterLevel = -11000
+
+	for y = 1, size.Y do
+		local occupancy = occupancies[1][y][1]
+		local material = materials[1][y][1]
+
+		if occupancy >= 0.9 and material == Enum.Material.Water then
+			local top = ((voxelPos.Y * 4) + (4 * y + 2))
+			waterLevel = math.max(waterLevel, top / Util.Scale)
+		end
+	end
+
+	return waterLevel, nil
+end
+
 function Util.SignedShort(x: number)
 	return -0x8000 + math.floor((x + 0x8000) % 0x10000)
 end

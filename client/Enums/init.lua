@@ -22,6 +22,8 @@ local Enums = {
 	SurfaceClass = require(script.SurfaceClass),
 	TerrainType = require(script.TerrainType),
 	ParticleFlags = require(script.ParticleFlags),
+
+	InteractionType = require(script.InteractionType),
 }
 
 local nameIndex: { [any]: { [number]: string } } = {}
