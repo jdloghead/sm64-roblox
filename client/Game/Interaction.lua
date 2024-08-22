@@ -43,6 +43,13 @@ local sBackwardKnockbackActions = {
 -- Helpers
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+local acceptableCapFlags: { number } = {
+	MarioFlags.NORMAL_CAP,
+	MarioFlags.VANISH_CAP,
+	MarioFlags.METAL_CAP,
+	MarioFlags.WING_CAP,
+}
+
 -- Converts an angle in degrees to sm64's s16 angle units. For example, DEGREES(90) == 0x4000
 local function DEGREES(x: number): number
 	return Util.SignedShort(x * 0x10000 / 360)
@@ -305,5 +312,53 @@ function Interaction.InteractKoopaShell(m: Mario, point: Vector3): boolean
 
 	return false
 end
+
+function Interaction.InteractCap(m: Mario, capFlag: number): boolean
+	local capMusic = 0
+	local capTime = 0
+
+	if m.Action() ~= Action.GETTING_BLOWN and table.find(acceptableCapFlags, capFlag) then
+		-- m.InteractObj = o
+		-- o.oInteractStatus = INT_STATUS_INTERACTED
+
+		m.Flags:Remove(MarioFlags.CAP_ON_HEAD, MarioFlags.CAP_IN_HAND)
+		m.Flags:Add(capFlag)
+
+		if capFlag == MarioFlags.VANISH_CAP then
+			capTime = 600
+			-- capMusic = SEQUENCE_ARGS(4, SEQ_EVENT_POWERUP)
+		elseif capFlag == MarioFlags.METAL_CAP then
+			capTime = 600
+			-- capMusic = SEQUENCE_ARGS(4, SEQ_EVENT_METAL_CAP)
+		elseif capFlag == MarioFlags.WING_CAP then
+			capTime = 1800
+			-- capMusic = SEQUENCE_ARGS(4, SEQ_EVENT_POWERUP)
+		end
+
+		if capTime > m.CapTimer then
+			m.CapTimer = capTime
+		end
+
+		if m.Action:Has(ActionFlags.IDLE) or m.Action() == Action.WALKING then
+			m.Flags:Add(MarioFlags.CAP_IN_HAND)
+			m:SetAction(Action.PUTTING_ON_CAP)
+		else
+			m.Flags:Add(MarioFlags.CAP_ON_HEAD)
+		end
+
+		m:PlaySound(Sounds.MARIO_HERE_WE_GO)
+
+		if capMusic ~= 0 then
+			-- playCapMusic(capMusic)
+		end
+
+		return true
+	end
+
+	return false
+end
+
+-- redirect anyways
+Interaction.determineInteraction = determineInteraction
 
 return Interaction

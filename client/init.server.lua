@@ -1,4 +1,10 @@
 --!strict
+
+----------------------------------------------FLAGS------------------------------------------------
+-- Calls onReset when mario is considered to be in a dead state
+local FFLAG_AUTO_RESET_ON_DEAD = false
+---------------------------------------------------------------------------------------------------
+
 local Core = script.Parent
 
 if Core:GetAttribute("HotLoading") then
@@ -474,7 +480,13 @@ local function setDebugStat(key: string, value: any)
 	debugStats:SetAttribute(key, value)
 end
 
+local autoResetThread: thread? = nil
 local function onReset()
+	if autoResetThread then
+		pcall(task.cancel, autoResetThread)
+		autoResetThread = nil :: any
+	end
+
 	local roblox = Vector3.yAxis * 100
 	local sm64 = Util.ToSM64(roblox)
 	local char = player.Character
@@ -502,6 +514,7 @@ local function onReset()
 	mario.HurtCounter = 0
 	mario.Health = 0x880
 
+	mario.CapTimer = 0
 	mario.BurnTimer = 0
 	mario.SquishTimer = 0
 	mario.QuicksandDepth = 0
@@ -552,16 +565,20 @@ local function update(dt: number)
 	subframe += (now - lastUpdate) * (STEP_RATE * simSpeed)
 	lastUpdate = now
 
-	if character:GetAttribute("WingCap") or Core:GetAttribute("WingCap") then
-		mario.Flags:Add(MarioFlags.WING_CAP)
-	else
-		mario.Flags:Remove(MarioFlags.WING_CAP)
-	end
+	--! This code interferes with obtaining the caps normally.
+	--  TODO solve this better
+	if mario.CapTimer == 0 then
+		if character:GetAttribute("WingCap") or Core:GetAttribute("WingCap") then
+			mario.Flags:Add(MarioFlags.WING_CAP)
+		else
+			mario.Flags:Remove(MarioFlags.WING_CAP)
+		end
 
-	if character:GetAttribute("Metal") then
-		mario.Flags:Add(MarioFlags.METAL_CAP)
-	else
-		mario.Flags:Remove(MarioFlags.METAL_CAP)
+		if character:GetAttribute("Metal") then
+			mario.Flags:Add(MarioFlags.METAL_CAP)
+		else
+			mario.Flags:Remove(MarioFlags.METAL_CAP)
+		end
 	end
 
 	subframe = math.min(subframe, 4) -- Prevent execution runoff
@@ -589,6 +606,17 @@ local function update(dt: number)
 
 		prevCF = goalCF
 		goalCF = CFrame.new(gfxPos) * FLIP * gfxRot
+	end
+
+	-- Auto reset logic (Optional)
+	-- Remove if you have your own solutions
+	if FFLAG_AUTO_RESET_ON_DEAD then
+		local action = mario.Action()
+		local isDead = (mario.Health < 0x100 or (action == Action.QUICKSAND_DEATH))
+
+		if isDead and not autoResetThread then
+			autoResetThread = task.delay(3, onReset)
+		end
 	end
 
 	if character and goalCF then
@@ -709,6 +737,17 @@ local function update(dt: number)
 				)
 
 				setDebugStat("SquishTimer", mario.SquishTimer)
+
+				local caps: { string? } = {}
+				table.insert(caps, mario.Flags:Has(MarioFlags.CAP_ON_HEAD) and "Normal" or nil)
+				table.insert(caps, mario.Flags:Has(MarioFlags.VANISH_CAP) and "Vanish" or nil)
+				table.insert(caps, mario.Flags:Has(MarioFlags.METAL_CAP) and "Metal" or nil)
+				table.insert(caps, mario.Flags:Has(MarioFlags.WING_CAP) and "Wing" or nil)
+
+				setDebugStat(
+					"MarioCaps",
+					`Timer {mario.CapTimer}, Caps: ({#caps == 0 and "None" or table.concat(caps, ", ")})`
+				)
 			end
 
 			for _, name in AUTO_STATS do

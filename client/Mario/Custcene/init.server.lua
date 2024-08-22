@@ -25,7 +25,7 @@ type Mario = System.Mario
 
 local DEF_ACTION: (number, (Mario) -> boolean) -> () = System.RegisterAction
 
-local function CommonDeathHandler(m: Mario, animation, frameToDeathWarp)
+local function commonDeathHandler(m: Mario, animation, frameToDeathWarp)
 	local animFrame = m:SetAnimation(animation)
 
 	m.BodyState.EyeState = MarioEyes.DEAD
@@ -33,7 +33,7 @@ local function CommonDeathHandler(m: Mario, animation, frameToDeathWarp)
 	return animFrame
 end
 
-local function StuckInGroundHandler(m: Mario, animation, unstuckFrame: number, target2, target3, endAction)
+local function stuckInGroundHandler(m: Mario, animation, unstuckFrame: number, target2, target3, endAction)
 	local animFrame = m:SetAnimation(animation)
 
 	if m.Input:Has(InputFlags.A_PRESSED) then
@@ -59,6 +59,17 @@ local function StuckInGroundHandler(m: Mario, animation, unstuckFrame: number, t
 	end
 end
 
+--[[
+ * cutscenePutCapOn: Put Mario's cap on.
+ * Clears "cap in hand" flag, sets "cap on head" flag, plays sound
+ * SOUND_ACTION_UNKNOWN43E.
+]]
+local function cutscenePutCapOn(m: Mario)
+	m.Flags:Remove(MarioFlags.CAP_IN_HAND)
+	m.Flags:Add(MarioFlags.CAP_ON_HEAD)
+	m:PlaySound(Sounds.ACTION_UNKNOWN43E)
+end
+
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Death states
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -69,7 +80,7 @@ DEF_ACTION(Action.STANDING_DEATH, function(m: Mario)
 	end
 
 	m:PlaySoundIfNoFlag(Sounds.MARIO_DYING, MarioFlags.ACTION_SOUND_PLAYED)
-	CommonDeathHandler(m, Animations.DYING_FALL_OVER, 80)
+	commonDeathHandler(m, Animations.DYING_FALL_OVER, 80)
 	if m.AnimFrame == 77 then
 		m:PlayLandingSound(Sounds.ACTION_TERRAIN_BODY_HIT_GROUND)
 	end
@@ -79,13 +90,13 @@ end)
 
 DEF_ACTION(Action.ELECTROCUTION, function(m: Mario)
 	m:PlaySoundIfNoFlag(Sounds.MARIO_DYING, MarioFlags.ACTION_SOUND_PLAYED)
-	CommonDeathHandler(m, Animations.ELECTROCUTION, 43)
+	commonDeathHandler(m, Animations.ELECTROCUTION, 43)
 	return false
 end)
 
 DEF_ACTION(Action.DEATH_ON_BACK, function(m: Mario)
 	m:PlaySoundIfNoFlag(Sounds.MARIO_DYING, MarioFlags.ACTION_SOUND_PLAYED)
-	if CommonDeathHandler(m, Animations.DYING_ON_BACK, 54) == 40 then
+	if commonDeathHandler(m, Animations.DYING_ON_BACK, 54) == 40 then
 		m:PlayLandingSound(Sounds.ACTION_TERRAIN_BODY_HIT_GROUND)
 	end
 	return false
@@ -93,7 +104,7 @@ end)
 
 DEF_ACTION(Action.DEATH_ON_STOMACH, function(m: Mario)
 	m:PlaySoundIfNoFlag(Sounds.MARIO_DYING, MarioFlags.ACTION_SOUND_PLAYED)
-	if CommonDeathHandler(m, Animations.DYING_ON_STOMACH, 54) == 40 then
+	if commonDeathHandler(m, Animations.DYING_ON_STOMACH, 54) == 40 then
 		m:PlayLandingSound(Sounds.ACTION_TERRAIN_BODY_HIT_GROUND)
 	end
 	return false
@@ -124,7 +135,7 @@ end)
 
 DEF_ACTION(Action.SUFFOCATION, function(m: Mario)
 	m:PlaySoundIfNoFlag(Sounds.MARIO_DYING, MarioFlags.ACTION_SOUND_PLAYED)
-	CommonDeathHandler(m, Animations.SUFFOCATING, 86)
+	commonDeathHandler(m, Animations.SUFFOCATING, 86)
 	return false
 end)
 
@@ -168,17 +179,17 @@ end)
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 DEF_ACTION(Action.HEAD_STUCK_IN_GROUND, function(m: Mario)
-	StuckInGroundHandler(m, Animations.HEAD_STUCK_IN_GROUND, 96, 105, 135, Action.IDLE)
+	stuckInGroundHandler(m, Animations.HEAD_STUCK_IN_GROUND, 96, 105, 135, Action.IDLE)
 	return false
 end)
 
 DEF_ACTION(Action.BUTT_STUCK_IN_GROUND, function(m: Mario)
-	StuckInGroundHandler(m, Animations.BOTTOM_STUCK_IN_GROUND, 127, 136, -2, Action.GROUND_POUND_LAND)
+	stuckInGroundHandler(m, Animations.BOTTOM_STUCK_IN_GROUND, 127, 136, -2, Action.GROUND_POUND_LAND)
 	return false
 end)
 
 DEF_ACTION(Action.FEET_STUCK_IN_GROUND, function(m: Mario)
-	StuckInGroundHandler(m, Animations.LEGS_STUCK_IN_GROUND, 116, 129, -2, Action.IDLE)
+	stuckInGroundHandler(m, Animations.LEGS_STUCK_IN_GROUND, 116, 129, -2, Action.IDLE)
 	return false
 end)
 
@@ -279,6 +290,26 @@ DEF_ACTION(Action.DISAPPEARED, function(m: Mario)
 			-- LevelTriggerWarp(m, bit32.rshift(m.ActionArg, 16));
 		end
 	end
+	return false
+end)
+
+DEF_ACTION(Action.PUTTING_ON_CAP, function(m: Mario)
+	local animFrame = m:SetAnimation(Animations.PUT_CAP_ON)
+
+	if animFrame == 0 then
+		-- enableTimeStop()
+	end
+
+	if animFrame == 28 then
+		cutscenePutCapOn(m)
+	end
+
+	if m:IsAnimAtEnd() then
+		m:SetAction(Action.IDLE)
+		-- disableTimeStop()
+	end
+
+	m:StationaryGroundStep()
 	return false
 end)
 

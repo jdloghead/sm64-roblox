@@ -1638,11 +1638,31 @@ function Mario.SinkInQuicksand(m: Mario)
 	m.GfxPos = Util.SetY(m.GfxPos, m.GfxPos.Y - m.QuicksandDepth)
 end
 
+--[[
+ * Is a binary representation of the frames to flicker Mario's cap when the timer
+ * is running out.
+ *
+ * Equals [1000]^5 . [100]^8 . [10]^9 . [1] in binary, which is
+ * 100010001000100010001001001001001001001001001010101010101010101.
+]]
+
+-- This gets truncated...
+-- local capFlickerFrames = 0x4444449249255555
+
 function Mario.UpdateCaps(m: Mario): Flags
 	local flags = m.Flags
+	local action = m.Action()
 
 	if m.CapTimer > 0 then
-		if m.CapTimer <= 60 then
+		if
+			(m.CapTimer <= 60)
+			or (
+				action ~= Action.READING_AUTOMATIC_DIALOG
+				and action ~= Action.READING_NPC_DIALOG
+				and action ~= Action.READING_SIGN
+				and action ~= Action.IN_CANNON
+			)
+		then
 			m.CapTimer -= 1
 		end
 
@@ -1653,6 +1673,15 @@ function Mario.UpdateCaps(m: Mario): Flags
 				m.Flags:Remove(MarioFlags.CAP_ON_HEAD)
 			end
 		end
+
+		-- This code flickers the cap through a long binary string, increasing in how
+		-- common it flickers near the end.
+		--[[if m.CapTimer < 64 and bit32.band(bit32.lshift(1, m.CapTimer), capFlickerFrames) ~= 0 then
+			flags:Remove(MarioFlags.SPECIAL_CAPS)
+			if not flags:Has(MarioFlags.CAPS) then
+				flags:Remove(MarioFlags.CAP_ON_HEAD)
+			end
+		end]]
 	end
 
 	return flags
@@ -1703,7 +1732,7 @@ end
  * when he is close to unsquishing.
 ]]
 -- stylua: ignore
-local SquishScaleOverTime = {
+local squishScaleOverTime = {
 	0x46, 0x32, 0x32, 0x3C,
 	0x46, 0x50, 0x50, 0x3C,
 	0x28, 0x14, 0x14, 0x1E,
@@ -1724,8 +1753,8 @@ function Mario.SquishModel(m: Mario)
 			m.SquishTimer -= 1
 
 			m.GfxScale = Vector3.new(
-				((SquishScaleOverTime[(15 - m.SquishTimer) + 1] * 0.4) / 100.0) + 1.0,
-				1.0 - ((SquishScaleOverTime[(15 - m.SquishTimer) + 1] * 0.6) / 100.0),
+				((squishScaleOverTime[(15 - m.SquishTimer) + 1] * 0.4) / 100.0) + 1.0,
+				1.0 - ((squishScaleOverTime[(15 - m.SquishTimer) + 1] * 0.6) / 100.0),
 				m.GfxScale.Z
 			)
 		else
