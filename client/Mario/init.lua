@@ -432,7 +432,7 @@ function Mario.GetWallType(m: Mario, otherWall: RaycastResult?): number
 	local wall: RaycastResult? = otherWall or m.Wall
 	local instance: BasePart? = wall and wall.Instance :: BasePart
 
-	if wall and Instance then
+	if wall and instance then
 		local material: Enum.Material = instance.Material
 
 		local ManualDefine = instance:GetAttribute("WallSurfaceClass")
