@@ -93,7 +93,7 @@ local function determineInteraction(m: Mario, point: Vector3): number
 				interaction = InteractionType.GROUND_POUND_OR_TWIRL
 			end
 		elseif action() == Action.GROUND_POUND_LAND or action() == Action.TWIRL_LAND then
-			-- Neither ground pounding nor twirling change Mario's vertical speed on landing.,
+			-- Neither ground pounding nor twirling change Mario's vertical speed on landing,
 			-- so the speed check is nearly always true (perhaps not if you land while going upwards?)
 			-- Additionally, actionState it set on each first thing in their action, so this is
 			-- only true prior to the very first frame (i.e. active 1 frame prior to it run).
@@ -176,7 +176,7 @@ local function determineKnockbackAction(m: Mario, point: Vector3, oDamageOrCoinV
 end
 
 local function takeDamageFromInteractObject(m: Mario, damage: number)
-	local damage = math.floor(tonumber(damage) or 1)
+	local damage = math.floor(tonumber(damage) or 0)
 
 	--[[local shake = 3
 	if damage >= 4 then
@@ -223,7 +223,7 @@ end
 
 -- Vector3 look is a LookVector, preferably from a CFrame.
 -- Get LookVector from the Door object.
-local function shouldPushOrPullDoor(m: Mario, look: Vector3): number
+local function shouldPushOrPullDoor(m: Mario, point: Vector3, look: Vector3): number
 	local dx = point.X - m.Position.X
 	local dz = point.Z - m.Position.Z
 
@@ -236,7 +236,7 @@ end
 -- Mario Interactions
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-function Interaction.InteractFlame(m: Mario)
+function Interaction.InteractFlame(m: Mario): boolean
 	local burningAction = Action.BURNING_JUMP
 
 	if
@@ -277,7 +277,7 @@ function Interaction.InteractDamage(m: Mario, point: Vector3, damage: number): b
 end
 
 -- Vector3 point must be in SM64 Units.
-function Interaction.InteractKoopaShell(m: Mario, point: Vector3)
+function Interaction.InteractKoopaShell(m: Mario, point: Vector3): boolean
 	if not m.Action:Has(ActionFlags.RIDING_SHELL) then
 		local interaction = determineInteraction(m, point)
 

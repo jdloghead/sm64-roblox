@@ -7,6 +7,7 @@ return {
 	HANGABLE = 0x0005, -- Ceiling that Mario can climb on
 
 	SLOW = 0x0009, -- Slow down Mario, unused
+	DEATH_PLANE = 0x000A, -- Death floor
 
 	VERY_SLIPPERY = 0x0013, -- Very slippery, mostly used for slides
 	SLIPPERY = 0x0014, -- Slippery

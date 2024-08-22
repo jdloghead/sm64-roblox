@@ -1088,6 +1088,10 @@ DEF_ACTION(Action.LAVA_BOOST, function(m: Mario)
 		end
 	end
 
+	--if m.Health < 0x100 then
+	--	LevelTriggerWarp(m, WarpOp.DEATH)
+	--end
+
 	m.BodyState.EyeState = MarioEyes.DEAD
 	return false
 end)

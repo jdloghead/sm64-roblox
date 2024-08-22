@@ -79,7 +79,7 @@ do
 
 			-- Goodbye.
 			removing:Disconnect()
-			removing = nil
+			removing = nil :: any
 		end)
 	end
 
@@ -102,12 +102,17 @@ do
 
 		for _, object: Instance in CollectionService:GetTagged(tag) do
 			if object:IsA("BasePart") and object:IsDescendantOf(workspace) then
-				append(new, object, tag)
+				append(new, object)
 			end
 		end
 
 		return new
 	end
+
+	-- Ok!
+	TagParams.RobloxTerrain = RaycastParams.new()
+	TagParams.RobloxTerrain.FilterType = Enum.RaycastFilterType.Include
+	TagParams.RobloxTerrain.FilterDescendantsInstances = { workspace.Terrain }
 end
 
 -- To assist with making proper BLJ-able staircases.
@@ -421,7 +426,8 @@ function Util.GetWaterLevel(pos: Vector3): (number, RaycastResult?)
 
 	-- Check terrain water voxels instead
 	local terrain = workspace.Terrain
-	local voxelPos = terrain:WorldToCellPreferSolid(Util.ToRoblox(pos))
+	local robloxPos = Util.ToRoblox(pos)
+	local voxelPos = terrain:WorldToCellPreferSolid(robloxPos)
 
 	local voxelRegion = Region3.new(voxelPos * 4, (voxelPos + Vector3.one + (Vector3.yAxis * 3)) * 4)
 	voxelRegion = voxelRegion:ExpandToGrid(4)
@@ -440,7 +446,18 @@ function Util.GetWaterLevel(pos: Vector3): (number, RaycastResult?)
 		end
 	end
 
-	return waterLevel, nil
+	local terrainWaterPseudoFloor: RaycastResult? =
+		Util.RaycastSM64(pos + (Vector3.yAxis * 32), -Vector3.yAxis * 150, TagParams.RobloxTerrain)
+
+	if terrainWaterPseudoFloor and terrainWaterPseudoFloor.Material == Enum.Material.Water then
+		if waterLevel < terrainWaterPseudoFloor.Position.Y then
+			waterLevel = terrainWaterPseudoFloor.Position.Y
+		end
+	else
+		terrainWaterPseudoFloor = nil :: any
+	end
+
+	return waterLevel, terrainWaterPseudoFloor :: any?
 end
 
 function Util.SignedShort(x: number)

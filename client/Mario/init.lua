@@ -1054,7 +1054,7 @@ function Mario.ApplyPlatformInertia(m: Mario, rayResult: RaycastResult?, div: nu
 end
 
 function Mario.StationaryGroundStep(m: Mario): number
-	local takeStep = true
+	local takeStep = 0
 	local stepResult = GroundStep.NONE
 
 	m:SetForwardVel(0)
@@ -1770,23 +1770,49 @@ function Mario.ProcessInteractions(m: Mario)
 		m.InvincTimer -= 1
 	end
 
+	--! If the kick/punch flags are set and an object collision changes Mario's
+	--  action, he will get the kick/punch wall speed anyway.
 	m:CheckKickOrPunchWall()
 	m.Flags:Remove(MarioFlags.PUNCHING, MarioFlags.KICKING, MarioFlags.TRIPPING)
 end
 
+-- You have to reset/respawn Mario manually on your own.
+local function checkDeathBarrier(m: Mario)
+	if m.Position.Y < m.FloorHeight + 2048.0 then
+		if --[[LevelTriggerWarp(m, WarpOp.WARP_FLOOR) == 20 and]]
+			not m.Flags:Has(MarioFlags.FALLING_FAR)
+		then
+			m:PlaySoundIfNoFlag(Sounds.MARIO_WAAAOOOW, MarioFlags.FALLING_FAR)
+		end
+	end
+end
+
+local function checkLavaBoost(m: Mario)
+	if not m.Action:Has(ActionFlags.RIDING_SHELL) and m.Position.Y < m.FloorHeight + 10 then
+		if not m.Flags:Has(MarioFlags.METAL_CAP) then
+			m.HurtCounter += m.Flags:Has(MarioFlags.CAP_ON_HEAD) and 12 or 18
+		end
+
+		m:DropAndSetAction(Action.LAVA_BOOST)
+	end
+end
+
 function Mario.HandleSpecialFloors(m: Mario)
-	local floor = m.Floor
-	local floorType = m:GetFloorType()
+	if bit32.band(m.Action(), ActionGroups.GROUP_MASK) == ActionGroups.CUTSCENE then
+		return
+	end
 
-	if
-		floor and not m.Action:Has(ActionFlags.AIR, ActionFlags.SWIMMING, ActionFlags.HANGING, ActionFlags.RIDING_SHELL)
-	then
-		if floorType == SurfaceClass.BURNING then
-			if not m.Flags:Has(MarioFlags.METAL_CAP) then
-				m.HurtCounter += m.Flags:Has(MarioFlags.CAP_ON_HEAD) and 12 or 18
+	if m.Floor then
+		local floorType = m:GetFloorType()
+
+		if floorType == SurfaceClass.DEATH_PLANE or floorType == SurfaceClass.VERTICAL_WIND then
+			checkDeathBarrier(m)
+		end
+
+		if not m.Action:Has(ActionFlags.AIR, ActionFlags.SWIMMING) then
+			if floorType == SurfaceClass.BURNING then
+				checkLavaBoost(m)
 			end
-
-			m:SetAction(Action.LAVA_BOOST)
 		end
 	end
 end

@@ -546,11 +546,10 @@ local function update(dt: number)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	local simSpeed = tonumber(character:GetAttribute("TimeScale") or nil) or 1
 
-	local robloxPos = Util.ToRoblox(mario.Position)
-	Util.DebugWater(mario.WaterLevel)
 	Util.DebugCollisionFaces(mario.Wall, mario.Ceil, mario.Floor)
+	Util.DebugWater(mario.WaterLevel)
 
-	subframe += dt * (STEP_RATE * simSpeed)
+	subframe += (now - lastUpdate) * (STEP_RATE * simSpeed)
 	lastUpdate = now
 
 	if character:GetAttribute("WingCap") or Core:GetAttribute("WingCap") then
