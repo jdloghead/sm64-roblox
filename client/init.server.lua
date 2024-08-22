@@ -746,7 +746,7 @@ local function update(dt: number)
 
 				setDebugStat(
 					"MarioCaps",
-					`Timer {mario.CapTimer}, Caps: ({#caps == 0 and "None" or table.concat(caps, ", ")})`
+					`Timer {mario.CapTimer}, Caps: {#caps == 0 and "None" or table.concat(caps, ", ")}`
 				)
 			end
 

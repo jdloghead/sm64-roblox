@@ -428,6 +428,27 @@ function Mario.GetCeilType(m: Mario): number
 	return 0
 end
 
+function Mario.GetWallType(m: Mario, otherWall: RaycastResult?): number
+	local wall: RaycastResult? = otherWall or m.Wall
+	local instance: BasePart? = wall and wall.Instance :: BasePart
+
+	if wall and Instance then
+		local material: Enum.Material = instance.Material
+
+		local ManualDefine = instance:GetAttribute("WallSurfaceClass")
+		if SurfaceClass[ManualDefine] then
+			return SurfaceClass[ManualDefine]
+		end
+
+		-- Lava surface check
+		if material == Enum.Material.CrackedLava or instance:HasTag("Lava") then
+			return SurfaceClass.BURNING
+		end
+	end
+
+	return 0
+end
+
 function Mario.FacingDownhill(m: Mario, turnYaw: boolean?): boolean
 	local faceAngleYaw = m.FaceAngle.Y
 
@@ -1298,9 +1319,7 @@ function Mario.PerformAirQuarterStep(m: Mario, intendedPos: Vector3, stepArg: nu
 		local wallDYaw = Util.SignedShort(Util.Atan2s(wall.Normal.Z, wall.Normal.X) - m.FaceAngle.Y)
 		m.Wall = wall
 
-		local IsLavaWall = (upperWall and upperWall.Material == Enum.Material.CrackedLava)
-			or (lowerWall and lowerWall.Material == Enum.Material.CrackedLava)
-		if IsLavaWall then
+		if m:GetWallType() == SurfaceClass.BURNING then
 			return AirStep.HIT_LAVA_WALL
 		end
 
