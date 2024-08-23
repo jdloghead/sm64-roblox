@@ -401,7 +401,7 @@ function Mario.GetFloorType(m: Mario): number
 				return SurfaceClass[QuicksandType]
 			end
 
-			return SurfaceClass.MOVING_QUICKSAND
+			return SurfaceClass.QUICKSAND
 		end
 	end
 
@@ -996,7 +996,7 @@ function Mario.UpdateMovingSand(m: Mario): boolean
 		)
 	then
 		local force = tonumber(floor.Instance:GetAttribute("Force")) or 0
-		local pushAngle = bit32.lshift(force, 8)
+		local pushAngle = Util.SignedShort(bit32.lshift(force, 8))
 		local pushSpeed = sMovingSandSpeeds[bit32.rshift(force, 8) + 1]
 
 		m.Velocity += Vector3.new(pushSpeed * Util.Sins(pushAngle), 0, pushSpeed * Util.Coss(pushAngle))
@@ -1532,9 +1532,14 @@ function Mario.UpdateJoystickInputs(m: Mario)
 	end
 
 	if m.IntendedMag > 0 then
-		local camera = workspace.CurrentCamera
-		local lookVector = camera.CFrame.LookVector
-		local cameraYaw = Util.Atan2s(-lookVector.Z, -lookVector.X)
+		local cameraYaw = 0
+
+		-- For bots
+		if not controller.NotRelative then
+			local camera = workspace.CurrentCamera
+			local lookVector = camera.CFrame.LookVector
+			cameraYaw = Util.Atan2s(-lookVector.Z, -lookVector.X)
+		end
 
 		m.IntendedYaw = Util.SignedShort(Util.Atan2s(-controller.StickY, controller.StickX) + cameraYaw)
 		m.Input:Add(InputFlags.NONZERO_ANALOG)
@@ -1707,7 +1712,7 @@ function Mario.UpdateCaps(m: Mario): Flags
 end
 
 function Mario.UpdateModel(m: Mario)
-	local modelState = Flags.new()
+	local modelState = m.BodyState.ModelState
 	local bodyState = m.BodyState
 	local flags = m:UpdateCaps()
 
@@ -2080,13 +2085,8 @@ function Mario.ExecuteAction(m: Mario): number
 							return m:DropAndSetAction(Action.SQUISHED, 0)
 						end
 
-						-- idk
-						local die_standing = not (
-							m.Action() == Action.HARD_FORWARD_GROUND_KB
-							or m.Action() == Action.HARD_BACKWARD_GROUND_KB
-						)
-						if not m.Input:Has(ActionFlags.INVULNERABLE) then
-							if (m.Health < 0x100) and die_standing then
+						if not m.Action:Has(ActionFlags.INVULNERABLE) then
+							if m.Health < 0x100 then
 								return m:SetAction(Action.STANDING_DEATH, 0)
 							end
 						end
@@ -2106,13 +2106,7 @@ function Mario.ExecuteAction(m: Mario): number
 							return m:DropAndSetAction(Action.SQUISHED, 0)
 						end
 
-						-- weird stuff going on here
-						local die_standing = not (
-							m.Action() == Action.HARD_FORWARD_GROUND_KB
-							or m.Action() == Action.HARD_BACKWARD_GROUND_KB
-						)
-
-						if (m.Action() ~= Action.UNKNOWN_0002020E) and (die_standing == true) then
+						if m.Action() ~= Action.UNKNOWN_0002020E then
 							if m.Health < 0x100 then
 								return m:DropAndSetAction(Action.STANDING_DEATH, 0)
 							end

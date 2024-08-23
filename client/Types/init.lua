@@ -13,6 +13,8 @@ export type Controller = {
 
 	ButtonDown: Flags,
 	ButtonPressed: Flags,
+
+	NotRelative: boolean?,
 }
 
 export type BodyState = {

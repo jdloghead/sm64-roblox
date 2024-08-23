@@ -46,6 +46,21 @@
 				"StartAddress": "4F4E7C"
 			}
 		},
+
+		{
+			"name": "STAND_AGAINST_WALL",
+			"className": "Animation",
+            
+			"properties": {
+				"AnimationId": "rbxassetid://11352049348"
+			},
+            
+			"attributes": {
+				"Loop": true,
+				"NumFrames": 80,
+				"StartAddress": "543B40"
+			}
+		},
         
 		{
 			"name": "BACKFLIP",

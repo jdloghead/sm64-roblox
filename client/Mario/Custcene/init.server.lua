@@ -7,15 +7,21 @@ local Enums = System.Enums
 local Util = System.Util
 
 local Action = Enums.Action
+local Buttons = Enums.Buttons
 local ActionFlags = Enums.ActionFlags
 
-local AirStep = Enums.AirStep
-local MarioEyes = Enums.MarioEyes
 local InputFlags = Enums.InputFlags
 local MarioFlags = Enums.MarioFlags
 local ParticleFlags = Enums.ParticleFlags
 
+local ModelFlags = Enums.ModelFlags
+local MarioCap = Enums.MarioCap
+local MarioEyes = Enums.MarioEyes
+local MarioFlags = Enums.MarioFlags
+local MarioHands = Enums.MarioHands
+
 local GroundStep = Enums.GroundStep
+local AirStep = Enums.AirStep
 
 type Mario = System.Mario
 
@@ -68,6 +74,43 @@ local function cutscenePutCapOn(m: Mario)
 	m.Flags:Remove(MarioFlags.CAP_IN_HAND)
 	m.Flags:Add(MarioFlags.CAP_ON_HEAD)
 	m:PlaySound(Sounds.ACTION_UNKNOWN43E)
+end
+
+local function generalStarDanceHandler(m: Mario, isInWater: boolean)
+	local dialogID = 0
+
+	if m.ActionState == 0 then
+		m.ActionTimer += 1
+
+		if m.ActionTimer == 1 then
+			-- disableBackgroundSound()
+			-- ...
+		elseif m.ActionTimer == 42 then
+			m:PlaySound(Sounds.MARIO_HERE_WE_GO)
+		elseif m.ActionTimer == 80 then
+			if not (bit32.band(m.ActionArg, 1) > 0) then
+				-- LevelTriggerWarp(m, WarpOp.STAR_EXIT)
+			else
+				-- enableTimeStop()
+				-- createDialogBoxWithResponse()
+				m.ActionState = 1
+			end
+		end
+	elseif
+		m.ActionState == 1 --[[and gDialogResponse ~= DialogResponse.NONE]]
+	then
+		m.ActionState = 2
+	elseif m.ActionState == 2 and m:IsAnimAtEnd() then
+		-- disableTimeStop()
+		-- enableBackgroundSound()
+		-- dialogID = getStarCollectionDialog(m)
+		if dialogID > 0 then
+			-- look up for dialog
+			m:SetAction(Action.READING_AUTOMATIC_DIALOG, dialogID)
+		else
+			m:SetAction(isInWater and Action.WATER_IDLE or Action.IDLE)
+		end
+	end
 end
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -194,6 +237,61 @@ DEF_ACTION(Action.FEET_STUCK_IN_GROUND, function(m: Mario)
 end)
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Star dance states
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+local function actStarDance(m: Mario)
+	local camera = workspace.CurrentCamera
+	local lookVector = camera.CFrame.LookVector
+	local cameraYaw = Util.Atan2s(-lookVector.Z, -lookVector.X)
+
+	m.FaceAngle = Util.SetY(m.FaceAngle, cameraYaw)
+	m:SetAnimation(m.ActionState == 2 and Animations.RETURN_FROM_STAR_DANCE or Animations.STAR_DANCE)
+
+	generalStarDanceHandler(m, false)
+	if m.ActionState ~= 2 and m.ActionTimer >= 40 then
+		m.BodyState.HandState:Set(MarioHands.PEACE_SIGN)
+	end
+	m:StopAndSetHeightToFloor()
+	return false
+end
+
+DEF_ACTION(Action.STAR_DANCE_EXIT, actStarDance)
+DEF_ACTION(Action.STAR_DANCE_NO_EXIT, actStarDance)
+
+DEF_ACTION(Action.STAR_DANCE_WATER, function(m: Mario)
+	local camera = workspace.CurrentCamera
+	local lookVector = camera.CFrame.LookVector
+	local cameraYaw = Util.Atan2s(-lookVector.Z, -lookVector.X)
+	m:SetAnimation(m.ActionState == 2 and Animations.RETURN_FROM_WATER_STAR_DANCE or Animations.WATER_STAR_DANCE)
+
+	m.GfxPos = Vector3.zero
+	m.GfxAngle = Vector3int16.new(0, m.FaceAngle.Y, 0)
+	generalStarDanceHandler(m, true)
+	if m.ActionState ~= 2 and m.ActionTimer >= 62 then
+		m.BodyState.HandState:Set(MarioHands.PEACE_SIGN)
+	end
+
+	return false
+end)
+
+DEF_ACTION(Action.FALL_AFTER_STAR_GRAB, function(m: Mario)
+	if m.Position.Y < m.WaterLevel - 130 then
+		m:PlaySound(Sounds.ACTION_UNKNOWN430)
+		m.ParticleFlags:Add(ParticleFlags.WATER_SPLASH)
+		return m:SetAction(Action.STAR_DANCE_WATER, m.ActionArg)
+	end
+
+	if m:PerformAirStep(1) == AirStep.LANDED then
+		m:PlayLandingSound(Sounds.ACTION_TERRAIN_LANDING)
+		m:SetAction(bit32.band(m.ActionArg, 1) > 0 and Action.STAR_DANCE_NO_EXIT or Action.STAR_DANCE_EXIT, m.ActionArg)
+	end
+
+	m:SetAnimation(Animations.GENERAL_FALL)
+	return false
+end)
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- any
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -230,10 +328,12 @@ DEF_ACTION(Action.SQUISHED, function(m: Mario)
 			m.ActionState = 2
 		end
 	elseif m.ActionState == 2 then
+		m.ActionTimer += 1
 		if m.ActionTimer >= 15 then
 			-- 1 unit of health
 			if m.Health < 0x0100 then
 				-- LevelTriggerWarp OP_DEATH
+				-- woosh, he's gone!
 				m:SetAction(Action.DISAPPEARED)
 			end
 		elseif m.HurtCounter == 0 then
@@ -275,12 +375,14 @@ DEF_ACTION(Action.SQUISHED, function(m: Mario)
 		-- LevelTriggerWarp OP_DEATH
 		m:SetAction(Action.DISAPPEARED)
 	end
+
 	m:StopAndSetHeightToFloor()
 	m:SetAnimation(Animations.A_POSE)
 	return false
 end)
 
 DEF_ACTION(Action.DISAPPEARED, function(m: Mario)
+	m.BodyState.ModelState:Add(ModelFlags.INVISIBLE)
 	m:SetAnimation(Animations.A_POSE)
 	m:StopAndSetHeightToFloor()
 
@@ -290,6 +392,7 @@ DEF_ACTION(Action.DISAPPEARED, function(m: Mario)
 			-- LevelTriggerWarp(m, bit32.rshift(m.ActionArg, 16));
 		end
 	end
+
 	return false
 end)
 
@@ -310,6 +413,57 @@ DEF_ACTION(Action.PUTTING_ON_CAP, function(m: Mario)
 	end
 
 	m:StationaryGroundStep()
+	return false
+end)
+
+DEF_ACTION(Action.DEBUG_FREE_MOVE, function(m: Mario)
+	local controller = m.Controller
+
+	local pos
+	local speed
+	local action
+
+	speed = controller.ButtonDown:Has(Buttons.B_BUTTON) and 4 or 1
+	if controller.ButtonDown:Has(Buttons.L_TRIG) then
+		speed = 0.01
+	end
+
+	m:SetAnimation(Animations.A_POSE)
+	pos = m.Position
+
+	if controller.ButtonDown:Has(Buttons.U_JPAD) then
+		pos += Vector3.yAxis * (16.0 * speed)
+	end
+	if controller.ButtonDown:Has(Buttons.D_JPAD) then
+		pos -= Vector3.yAxis * (16.0 * speed)
+	end
+
+	if m.IntendedMag > 0 then
+		pos += Vector3.new(32.0 * speed * Util.Sins(m.IntendedYaw), 0, 32.0 * speed * Util.Coss(m.IntendedYaw))
+	end
+
+	local floorHeight, surf = Util.FindFloor(pos)
+	if surf ~= nil then
+		if pos.Y < floorHeight then
+			pos = Util.SetY(pos, floorHeight)
+		end
+		m.Position = pos
+	end
+
+	m.FaceAngle = Vector3int16.new(0, m.IntendedYaw, 0)
+	m.GfxPos = Vector3.zero
+	m.GfxAngle = Vector3int16.new(0, m.FaceAngle.Y, 0)
+
+	if controller.ButtonPressed:Has(Buttons.A_BUTTON) then
+		if m.Position.Y <= m.WaterLevel - 100 then
+			action = Action.WATER_IDLE
+		else
+			action = Action.IDLE
+		end
+
+		m:SetAction(action)
+	end
+
 	return false
 end)
 

@@ -151,12 +151,14 @@ UserInputService.InputBegan:Connect(processInput)
 UserInputService.InputChanged:Connect(processInput)
 UserInputService.InputEnded:Connect(processInput)
 
-local function bindInput(button: number, label: string, ...: InputType)
+local function bindInput(button: number, label: string?, ...: InputType)
 	local id = "BTN_" .. button
 
 	if UserInputService.TouchEnabled then
-		ContextActionService:BindAction(id, processAction, true)
-		ContextActionService:SetTitle(id, label)
+		ContextActionService:BindAction(id, processAction, label ~= nil)
+		if label then
+			ContextActionService:SetTitle(id, label)
+		end
 	end
 
 	for i, input in { ... } do
@@ -255,6 +257,16 @@ bindInput(
 	Enum.KeyCode.ButtonL2,
 	Enum.KeyCode.ButtonR2
 )
+
+-- JPAD buttons
+--     ^
+--     U
+--  < HJK >
+--     v
+bindInput(Buttons.U_JPAD, nil, Enum.KeyCode.U)
+bindInput(Buttons.L_JPAD, nil, Enum.KeyCode.H)
+bindInput(Buttons.R_JPAD, nil, Enum.KeyCode.K)
+bindInput(Buttons.D_JPAD, nil, Enum.KeyCode.J)
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Network Dispatch
@@ -594,12 +606,9 @@ local function update(dt: number)
 		local gfxPos = Util.ToRoblox(mario.Position) + gfxPosOffset
 		gfxRot = Util.ToRotation(mario.GfxAngle)
 
-		task.spawn(function()
-			RunService.RenderStepped:Wait()
-			if humanoid then
-				humanoid.CameraOffset = -gfxPosOffset
-			end
-		end)
+		if humanoid then
+			humanoid.CameraOffset = -gfxPosOffset
+		end
 
 		mario.GfxPos = Vector3.zero
 		mario.GfxAngle = Vector3int16.new()
@@ -612,7 +621,11 @@ local function update(dt: number)
 	-- Remove if you have your own solutions
 	if FFLAG_AUTO_RESET_ON_DEAD then
 		local action = mario.Action()
-		local isDead = (mario.Health < 0x100 or (action == Action.QUICKSAND_DEATH))
+		
+		--stylua: ignore
+		local isDead = mario.Health < 0x100 or (
+			action == Action.QUICKSAND_DEATH
+		)
 
 		if isDead and not autoResetThread then
 			autoResetThread = task.delay(3, onReset)

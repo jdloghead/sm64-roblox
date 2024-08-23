@@ -446,8 +446,12 @@ function Util.GetWaterLevel(pos: Vector3): (number, RaycastResult?)
 		end
 	end
 
-	local terrainWaterPseudoFloor: RaycastResult? =
-		Util.RaycastSM64(pos + (Vector3.yAxis * 32), -Vector3.yAxis * 150, TagParams.RobloxTerrain)
+	-- stylua: ignore
+	local terrainWaterPseudoFloor: RaycastResult? = Util.RaycastSM64(
+		pos + (Vector3.yAxis * 32),
+		-Vector3.yAxis * 150,
+		TagParams.RobloxTerrain
+	)
 
 	if terrainWaterPseudoFloor and terrainWaterPseudoFloor.Material == Enum.Material.Water then
 		if waterLevel < terrainWaterPseudoFloor.Position.Y then

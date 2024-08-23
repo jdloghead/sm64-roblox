@@ -358,7 +358,58 @@ function Interaction.InteractCap(m: Mario, capFlag: number): boolean
 	return false
 end
 
--- redirect anyways
-Interaction.determineInteraction = determineInteraction
+function Interaction.InteractStarOrKey(m: Mario): boolean
+	local starGrabAction = Action.STAR_DANCE_EXIT
+	local noExit = true -- (o->oInteractionSubtype & INT_SUBTYPE_NO_EXIT) != 0;
+	local grandStar = false -- (o->oInteractionSubtype & INT_SUBTYPE_GRAND_STAR) != 0;
+
+	if m.Health >= 0x100 then
+		-- marioStopRidingAndHolding(m)
+
+		if not noExit then
+			m.HurtCounter = 0
+			m.HealCounter = 0
+			if m.CapTimer > 1 then
+				m.CapTimer = 1
+			end
+		end
+
+		if noExit then
+			starGrabAction = Action.STAR_DANCE_NO_EXIT
+		end
+
+		if m.Action:Has(ActionFlags.SWIMMING) then
+			starGrabAction = Action.STAR_DANCE_WATER
+		end
+
+		if m.Action:Has(ActionFlags.AIR) then
+			starGrabAction = Action.FALL_AFTER_STAR_GRAB
+		end
+
+		-- o.InteractStatus = IntStatus.INTERACTED
+		-- m.InteractObj = o
+		-- m.UsedObj = o
+
+		-- starIndex = bit32.band(bit32.rshift(o.BhvParams, 24), 0x1F)
+		-- saveFileCollectStarOrKey(m.NumCoins, starIndex)
+
+		-- m.NumStars = saveFileGetTotalStarCount(gCurrSaveFileNum - 1, COURSE_MIN - 1, COURSE_MAX - 1)
+
+		--if not noExit then
+		--	dropQueuedBackgroundMusic()
+		--	fadeoutLevelMusic(126)
+		--end
+
+		-- m:PlaySound(Sounds.MENU_STAR_SOUND)
+
+		if grandStar then
+			return m:SetAction(Action.JUMBO_STAR_CUTSCENE)
+		end
+
+		return m:SetAction(starGrabAction, (noExit and 1 or 0) + 2 * (grandStar and 1 or 0))
+	end
+
+	return false
+end
 
 return Interaction

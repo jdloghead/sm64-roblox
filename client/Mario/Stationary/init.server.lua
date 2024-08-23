@@ -384,7 +384,7 @@ DEF_ACTION(Action.STANDING_AGAINST_WALL, function(m: Mario)
 		return m:SetAction(Action.PUNCHING)
 	end
 
-	m:SetAnimation(Animations.A_POSE)
+	m:SetAnimation(Animations.STAND_AGAINST_WALL)
 	m:StationaryGroundStep()
 
 	return false
