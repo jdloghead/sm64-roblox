@@ -241,11 +241,14 @@ end)
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 local function actStarDance(m: Mario)
-	local camera = workspace.CurrentCamera
-	local lookVector = camera.CFrame.LookVector
-	local cameraYaw = Util.Atan2s(-lookVector.Z, -lookVector.X)
+	-- Pretty sure cameraYaw isn't updated rapidly
+	if m.ActionTimer == 0 then
+		local camera = workspace.CurrentCamera
+		local lookVector = camera.CFrame.LookVector
+		local cameraYaw = Util.Atan2s(-lookVector.Z, -lookVector.X)
+		m.FaceAngle = Util.SetY(m.FaceAngle, cameraYaw)
+	end
 
-	m.FaceAngle = Util.SetY(m.FaceAngle, cameraYaw)
 	m:SetAnimation(m.ActionState == 2 and Animations.RETURN_FROM_STAR_DANCE or Animations.STAR_DANCE)
 
 	generalStarDanceHandler(m, false)
@@ -260,9 +263,14 @@ DEF_ACTION(Action.STAR_DANCE_EXIT, actStarDance)
 DEF_ACTION(Action.STAR_DANCE_NO_EXIT, actStarDance)
 
 DEF_ACTION(Action.STAR_DANCE_WATER, function(m: Mario)
-	local camera = workspace.CurrentCamera
-	local lookVector = camera.CFrame.LookVector
-	local cameraYaw = Util.Atan2s(-lookVector.Z, -lookVector.X)
+	-- Pretty sure cameraYaw isn't updated rapidly
+	if m.ActionTimer == 0 then
+		local camera = workspace.CurrentCamera
+		local lookVector = camera.CFrame.LookVector
+		local cameraYaw = Util.Atan2s(-lookVector.Z, -lookVector.X)
+		m.FaceAngle = Util.SetY(m.FaceAngle, cameraYaw)
+	end
+
 	m:SetAnimation(m.ActionState == 2 and Animations.RETURN_FROM_WATER_STAR_DANCE or Animations.WATER_STAR_DANCE)
 
 	m.GfxPos = Vector3.zero

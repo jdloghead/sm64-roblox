@@ -2,7 +2,7 @@
 
 ----------------------------------------------FLAGS------------------------------------------------
 -- Calls onReset when mario is considered to be in a dead state
-local FFLAG_AUTO_RESET_ON_DEAD = false
+local FFLAG_AUTO_RESET_ON_DEAD = true
 ---------------------------------------------------------------------------------------------------
 
 local Core = script.Parent
