@@ -8,14 +8,11 @@ local Util = System.Util
 
 local Action = Enums.Action
 local Buttons = Enums.Buttons
-local ActionFlags = Enums.ActionFlags
 
 local InputFlags = Enums.InputFlags
-local MarioFlags = Enums.MarioFlags
 local ParticleFlags = Enums.ParticleFlags
 
 local ModelFlags = Enums.ModelFlags
-local MarioCap = Enums.MarioCap
 local MarioEyes = Enums.MarioEyes
 local MarioFlags = Enums.MarioFlags
 local MarioHands = Enums.MarioHands
@@ -31,11 +28,12 @@ type Mario = System.Mario
 
 local DEF_ACTION: (number, (Mario) -> boolean) -> () = System.RegisterAction
 
-local function commonDeathHandler(m: Mario, animation, frameToDeathWarp)
+local function commonDeathHandler(m: Mario, animation, frameToDeathWarp: number)
 	local animFrame = m:SetAnimation(animation)
 
 	m.BodyState.EyeState = MarioEyes.DEAD
 	m:StopAndSetHeightToFloor()
+
 	return animFrame
 end
 
@@ -113,6 +111,18 @@ local function generalStarDanceHandler(m: Mario, isInWater: boolean)
 	end
 end
 
+local function launchMarioUntilLand(m: Mario, endAction: number, animation: Animation, forwardVel: number): boolean
+	local airStepLanded = false
+	m:SetForwardVel(forwardVel)
+	m:SetAnimation(animation)
+	airStepLanded = m:PerformAirStep(0) == AirStep.LANDED
+	if airStepLanded then
+		m:SetAction(endAction)
+	end
+
+	return airStepLanded
+end
+
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Death states
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -128,12 +138,6 @@ DEF_ACTION(Action.STANDING_DEATH, function(m: Mario)
 		m:PlayLandingSound(Sounds.ACTION_TERRAIN_BODY_HIT_GROUND)
 	end
 
-	return false
-end)
-
-DEF_ACTION(Action.ELECTROCUTION, function(m: Mario)
-	m:PlaySoundIfNoFlag(Sounds.MARIO_DYING, MarioFlags.ACTION_SOUND_PLAYED)
-	commonDeathHandler(m, Animations.ELECTROCUTION, 43)
 	return false
 end)
 
@@ -173,6 +177,12 @@ DEF_ACTION(Action.QUICKSAND_DEATH, function(m: Mario)
 
 	m:StationaryGroundStep()
 	m:PlaySound(Sounds.MOVING_QUICKSAND_DEATH)
+	return false
+end)
+
+DEF_ACTION(Action.ELECTROCUTION, function(m: Mario)
+	m:PlaySoundIfNoFlag(Sounds.MARIO_DYING, MarioFlags.ACTION_SOUND_PLAYED)
+	commonDeathHandler(m, Animations.ELECTROCUTION, 43)
 	return false
 end)
 
@@ -305,7 +315,7 @@ end)
 
 DEF_ACTION(Action.SQUISHED, function(m: Mario)
 	local squishAmount: number
-	local spaceUnderCeil: number = math.max(m.CeilHeight - m.FloorHeight)
+	local spaceUnderCeil: number = math.max(m.CeilHeight - m.FloorHeight, 0)
 	local surfAngle: number
 	local underSteepSurf = false -- seems to be responsible for setting velocity?
 
@@ -396,9 +406,9 @@ DEF_ACTION(Action.DISAPPEARED, function(m: Mario)
 
 	if m.ActionArg > 0 then
 		m.ActionArg -= 1
-		if bit32.band(m.ActionArg, 0xFFFF) == 0 then
-			-- LevelTriggerWarp(m, bit32.rshift(m.ActionArg, 16));
-		end
+		--if not bit32.band(m.ActionArg, 0xFFFF) then
+		--	LevelTriggerWarp(m, bit32.rshift(m.ActionArg, 16));
+		--end
 	end
 
 	return false
@@ -430,6 +440,8 @@ DEF_ACTION(Action.DEBUG_FREE_MOVE, function(m: Mario)
 	local pos
 	local speed
 	local action
+
+	m.Inertia = Vector3.zero
 
 	speed = controller.ButtonDown:Has(Buttons.B_BUTTON) and 4 or 1
 	if controller.ButtonDown:Has(Buttons.L_TRIG) then
@@ -470,6 +482,33 @@ DEF_ACTION(Action.DEBUG_FREE_MOVE, function(m: Mario)
 		end
 
 		m:SetAction(action)
+	end
+
+	return false
+end)
+
+DEF_ACTION(Action.SHOCKED, function(m: Mario)
+	m:PlaySoundIfNoFlag(Sounds.MARIO_WAAAOOOW, MarioFlags.ACTION_SOUND_PLAYED)
+	m:PlaySound(Sounds.MOVING_SHOCKED)
+	-- setCameraShakeFromHit(SHAKE_SHOCK)
+
+	if m:SetAnimation(Animations.SHOCKED) == 0 then
+		m.ActionTimer += 1
+		m.Flags:Add(MarioFlags.METAL_SHOCK)
+	end
+
+	if m.ActionArg == 0 then
+		m:SetForwardVel(0)
+		if m:PerformAirStep(1) == AirStep.LANDED then
+			m:PlayLandingSound()
+			m.ActionArg = 1
+		end
+	else
+		if m.ActionTimer >= 6 then
+			m.InvincTimer = 30
+			m:SetAction(m.Health < 0x100 and Action.ELECTROCUTION or Action.IDLE)
+		end
+		m:StopAndSetHeightToFloor()
 	end
 
 	return false

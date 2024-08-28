@@ -9,6 +9,9 @@ return {
 	SLOW = 0x0009, -- Slow down Mario, unused
 	DEATH_PLANE = 0x000A, -- Death floor
 
+	WATER = 0x000D, -- Water, has no action, used on some waterboxes below
+	FLOWING_WATER = 0x000E, -- Water (flowing), has parameters
+
 	VERY_SLIPPERY = 0x0013, -- Very slippery, mostly used for slides
 	SLIPPERY = 0x0014, -- Slippery
 	NOT_SLIPPERY = 0x0015, -- Non-slippery, climbable

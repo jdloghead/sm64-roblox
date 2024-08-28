@@ -7,14 +7,9 @@ local Enums = System.Enums
 local Util = System.Util
 
 local Action = Enums.Action
-local ActionFlags = Enums.ActionFlags
-local ActionGroup = Enums.ActionGroups
 
-local AirStep = Enums.AirStep
-local MarioEyes = Enums.MarioEyes
 local InputFlags = Enums.InputFlags
 local MarioFlags = Enums.MarioFlags
-local ParticleFlags = Enums.ParticleFlags
 local SurfaceClass = Enums.SurfaceClass
 
 type Mario = System.Mario
@@ -24,6 +19,10 @@ type Mario = System.Mario
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -- Should this be on the enums?
+local POLE_NONE = 0
+local POLE_TOUCHED_FLOOR = 1
+local POLE_FELL_OFF = 2
+
 local HANG_NONE = 0
 local HANG_HIT_CEIL_OR_OOB = 1
 local HANG_LEFT_CEIL = 2
@@ -58,7 +57,6 @@ end
 
 local function updateLedgeClimb(m: Mario, anim: Animation, endAction: number)
 	m:StopAndSetHeightToFloor()
-	m:ApplyPlatformInertia(m.Floor)
 	m:SetAnimation(anim)
 
 	if m:IsAnimAtEnd() then
@@ -66,6 +64,82 @@ local function updateLedgeClimb(m: Mario, anim: Animation, endAction: number)
 
 		if endAction == Action.IDLE then
 			climbUpLedge(m)
+		end
+	end
+end
+
+-- Evil hack. Run.
+local function getPoleValues(m: Mario): (number, Vector3)
+	local poleObj = assert(m.PoleObj)
+
+	local poleExtents = Util.GetExtents(poleObj) / Util.Scale
+	local polePos = Util.ToSM64(poleObj.Position)
+	local poleSize = poleExtents - polePos
+
+	--stylua: ignore
+	return
+		poleSize.Y * 2, -- PoleHeight
+		polePos - (Vector3.yAxis * poleSize.Y) -- PolePos
+end
+
+local function setPolePosition(m: Mario, offsetY: number): number
+	local poleHeight, polePos = getPoleValues(m)
+	local poleTop = poleHeight - 100.0
+
+	local result = POLE_NONE
+
+	if m.PolePos > poleTop then
+		m.PolePos = poleTop
+	end
+
+	m.Inertia = Vector3.zero
+	m.Position = Vector3.new(polePos.X, polePos.Y + m.PolePos + offsetY, polePos.Z)
+
+	local posResolveA, collidedA = Util.FindWallCollisions(m.Position, 60.0, 50.0)
+	m.Position = posResolveA
+	local posResolveB, collidedB = Util.FindWallCollisions(m.Position, 30.0, 24.0)
+	m.Position = posResolveB
+
+	local collided = collidedA or collidedB
+	local ceilHeight = Util.FindCeil(m.Position)
+
+	if m.Position.Y > ceilHeight - 160.0 then
+		m.Position = Util.SetY(m.Position, ceilHeight - 160.0)
+		m.PolePos = m.Position.Y - polePos.Y
+	end
+
+	local floorHeight = Util.FindFloor(m.Position)
+	if m.Position.Y < floorHeight then
+		m:SetAction(Action.IDLE)
+		result = POLE_TOUCHED_FLOOR
+	elseif m.PolePos < 100 then -- hitboxDownOffset
+		m:SetAction(Action.FREEFALL)
+		result = POLE_FELL_OFF
+	elseif collided then
+		if m.Position.Y > floorHeight + 20.0 then
+			m.ForwardVel = -2.0
+			m:SetAction(Action.SOFT_BONK)
+			result = POLE_FELL_OFF
+		else
+			m:SetAction(Action.IDLE)
+			result = POLE_TOUCHED_FLOOR
+		end
+	end
+
+	m.GfxPos = Vector3.zero
+	m.GfxAngle = Vector3int16.new(0, m.FaceAngle.Y, 0)
+
+	return result
+end
+
+local function playClimbingSounds(m: Mario, b: number)
+	local isOnTree = false
+
+	if b == 1 then
+		if m:IsAnimPastFrame(1) then
+			m:PlaySound(isOnTree and Sounds.ACTION_CLIMB_UP_TREE or Sounds.ACTION_CLIMB_UP_POLE)
+		else
+			m:PlaySound(isOnTree and Sounds.MOVING_SLIDE_DOWN_TREE or Sounds.MOVING_SLIDE_DOWN_POLE)
 		end
 	end
 end
@@ -122,7 +196,6 @@ DEF_ACTION(Action.LEDGE_GRAB, function(m: Mario)
 
 	m:StopAndSetHeightToFloor()
 	m:SetAnimation(Animations.IDLE_ON_LEDGE)
-	m:ApplyPlatformInertia(m.Floor)
 
 	return false
 end)
@@ -177,10 +250,11 @@ DEF_ACTION(Action.LEDGE_CLIMB_FAST, function(m: Mario)
 end)
 
 local function PerformHangingStep(m: Mario, nextPos: Vector3)
-	local ceil, floor
+	local ceil, floor, wall
 	local ceilHeight, floorHeight
 	local ceilOffset
-	local nextPos, wall = Util.FindWallCollisions(nextPos, 50, 50)
+
+	nextPos, wall = Util.FindWallCollisions(nextPos, 50, 50)
 
 	m.Wall = wall
 	floorHeight, floor = Util.FindFloor(nextPos)
@@ -307,7 +381,7 @@ DEF_ACTION(Action.HANGING, function(m: Mario)
 		return m:SetAction(Action.FREEFALL, 0)
 	end
 
-	if bit32.band(m.ActionArg, 1) > 0 then
+	if bit32.btest(m.ActionArg, 1) then
 		m:SetAnimation(Animations.HANDSTAND_LEFT)
 	else
 		m:SetAnimation(Animations.HANDSTAND_RIGHT)
@@ -331,7 +405,7 @@ DEF_ACTION(Action.HANG_MOVING, function(m: Mario)
 		return m:SetAction(Action.FREEFALL, 0)
 	end
 
-	if bit32.band(m.ActionArg, 1) > 0 then
+	if bit32.btest(m.ActionArg, 1) then
 		m:SetAnimation(Animations.MOVE_ON_WIRE_NET_RIGHT)
 	else
 		m:SetAnimation(Animations.MOVE_ON_WIRE_NET_LEFT)
@@ -352,5 +426,151 @@ DEF_ACTION(Action.HANG_MOVING, function(m: Mario)
 		m:SetAction(Action.FREEFALL, 0)
 	end
 
+	return false
+end)
+
+DEF_ACTION(Action.HOLDING_POLE, function(m: Mario)
+	if m.Input:Has(InputFlags.Z_PRESSED) or m.Health < 0x100 then
+		m.ForwardVel = -2.0
+		m.PoleObj = nil :: any
+		return m:SetAction(Action.SOFT_BONK)
+	end
+
+	if m.Input:Has(InputFlags.A_PRESSED) then
+		m.PoleObj = nil :: any
+		m.FaceAngle += Vector3int16.new(0, 0x8000, 0)
+		return m:SetAction(Action.WALL_KICK_AIR)
+	end
+
+	local poleHeight = getPoleValues(m)
+	local poleTop = poleHeight - 100.0
+
+	if m.Controller.StickY > 16.0 then
+		if m.PolePos < poleTop - 0.4 then
+			return m:SetAction(Action.CLIMBING_POLE)
+		end
+
+		if m.Controller.StickY > 50.0 then
+			return m:SetAction(Action.TOP_OF_POLE_TRANSITION)
+		end
+	end
+
+	if m.Controller.StickY < -16.0 then
+		m.PoleYawVel -= m.Controller.StickY * 2
+		if m.PoleYawVel > 0x1000 then
+			m.PoleYawVel = 0x1000
+		end
+
+		m.FaceAngle += Vector3int16.new(0, m.PoleYawVel, 0)
+		m.PolePos -= m.PoleYawVel / 0x100
+
+		playClimbingSounds(m, 2)
+	else
+		m.PoleYawVel = 0
+		m.FaceAngle -= Vector3int16.new(0, m.Controller.StickX * 16.0, 0)
+	end
+
+	if setPolePosition(m, 0.0) == POLE_NONE then
+		m:SetAnimation(Animations.IDLE_ON_POLE)
+	end
+
+	return false
+end)
+
+DEF_ACTION(Action.CLIMBING_POLE, function(m: Mario)
+	local camera = workspace.CurrentCamera
+	local lookVector = camera.CFrame.LookVector
+	local cameraYaw = Util.Atan2s(-lookVector.Z, -lookVector.X)
+
+	if m.Input:Has(InputFlags.A_PRESSED) then
+		m.PoleObj = nil :: any
+		m.FaceAngle += Vector3int16.new(0, 0x8000, 0)
+		return m:SetAction(Action.WALL_KICK_AIR)
+	end
+
+	if m.Controller.StickY < 8.0 then
+		return m:SetAction(Action.HOLDING_POLE)
+	end
+
+	m.PolePos += m.Controller.StickY / 8.0
+	m.PoleYawVel = 0
+
+	local face = Util.SignedShort(cameraYaw - m.FaceAngle.Y)
+	m.FaceAngle = Util.SetY(m.FaceAngle, cameraYaw - Util.ApproachFloat(face, 0, 0x400))
+
+	if setPolePosition(m, 0.0) == POLE_NONE then
+		local sp24 = m.Controller.StickY / 4.0 * 0x10000
+
+		m:SetAnimationWithAccel(Animations.CLIMB_UP_POLE, sp24)
+		playClimbingSounds(m, 1)
+	end
+
+	return false
+end)
+
+DEF_ACTION(Action.GRAB_POLE_SLOW, function(m: Mario)
+	m:PlaySoundIfNoFlag(Sounds.MARIO_WHOA, MarioFlags.MARIO_SOUND_PLAYED)
+
+	if setPolePosition(m, 0.0) == POLE_NONE then
+		m:SetAnimation(Animations.GRAB_POLE_SHORT)
+		if m:IsAnimAtEnd() then
+			m:SetAction(Action.HOLDING_POLE)
+		end
+	end
+
+	return false
+end)
+
+DEF_ACTION(Action.GRAB_POLE_FAST, function(m: Mario)
+	m:PlaySoundIfNoFlag(Sounds.MARIO_WHOA, MarioFlags.MARIO_SOUND_PLAYED)
+	m.FaceAngle += Vector3int16.new(0, m.PoleYawVel, 0)
+	m.PoleYawVel = m.PoleYawVel * 8 / 10
+
+	if setPolePosition(m, 0.0) == POLE_NONE then
+		if m.PoleYawVel > 0x800 then
+			m:SetAnimation(Animations.GRAB_POLE_SWING_PART1)
+		else
+			m:SetAnimation(Animations.GRAB_POLE_SWING_PART2)
+			if m:IsAnimAtEnd() then
+				m.PoleYawVel = 0
+				m:SetAction(Action.HOLDING_POLE)
+			end
+		end
+	end
+
+	return false
+end)
+
+DEF_ACTION(Action.TOP_OF_POLE_TRANSITION, function(m: Mario)
+	m.PoleYawVel = 0
+
+	if m.ActionArg == 0 then
+		m:SetAnimation(Animations.START_HANDSTAND)
+		if m:IsAnimAtEnd() then
+			return m:SetAction(Action.TOP_OF_POLE)
+		end
+	else
+		m:SetAnimation(Animations.RETURN_FROM_HANDSTAND)
+		if m.AnimFrame >= 16 then
+			return m:SetAction(Action.HOLDING_POLE)
+		end
+	end
+
+	setPolePosition(m, 0.0) -- OH NO!!! ITS return_mario_anim_y_translation
+	return false
+end)
+
+DEF_ACTION(Action.TOP_OF_POLE, function(m: Mario)
+	if m.Input:Has(InputFlags.A_PRESSED) then
+		return m:SetAction(Action.TOP_OF_POLE_JUMP)
+	end
+	if m.Controller.StickY < -16.0 then
+		return m:SetAction(Action.TOP_OF_POLE_TRANSITION, 1)
+	end
+
+	m.FaceAngle += Vector3int16.new(0, m.Controller.StickX * 16.0)
+
+	m:SetAnimation(Animations.HANDSTAND_IDLE)
+	setPolePosition(m, 0.0) -- OH NO!!! ITS return_mario_anim_y_translation
 	return false
 end)

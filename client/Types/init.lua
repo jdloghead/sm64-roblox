@@ -3,6 +3,14 @@
 local Flags = require(script.Flags)
 export type Flags = Flags.Class
 
+-- Fun types
+type s32 = number
+type f32 = number
+type u32 = number
+type s16 = number
+type s8 = number
+type u8 = number
+
 export type Controller = {
 	RawStickX: number,
 	RawStickY: number,
@@ -40,6 +48,7 @@ export type MarioState = {
 	PrevAction: Flags,
 	ParticleFlags: Flags,
 	HitboxHeight: number,
+	HitboxRadius: number,
 	TerrainType: number,
 	HeldObj: Instance?,
 
@@ -97,6 +106,8 @@ export type MarioState = {
 	HealCounter: number,
 	SquishTimer: number,
 
+	NumCoins: number,
+
 	CapTimer: number,
 	BurnTimer: number,
 	PeakHeight: number,
@@ -116,6 +127,131 @@ export type MarioState = {
 	AnimReset: boolean,
 	AnimSetFrame: number,
 	AnimSkipInterp: number,
+
+	-- Hacky solutions...
+	PoleObj: BasePart?,
+	PoleYawVel: number,
+	PolePos: number,
+}
+
+export type ObjectState = {
+	-- Roblox helpers
+	RbxConnections: { RBXScriptConnection | thread }?,
+	RbxInstance: Instance?,
+	OctreeNonstatic: boolean?,
+
+	-- Object Fields
+
+	-- Object Collision
+	CollidedObjInteractTypes: Flags,
+	NumCollidedObjs: s16,
+	CollidedObjs: { any },
+
+	-- Flags & values
+	RawData: { [any]: any }, -- ?
+
+	ActiveFlags: Flags,
+	Flags: Flags,
+
+	-- Object data
+	HitboxRadius: number,
+	HitboxHeight: number,
+
+	HurtboxRadius: number,
+	HurtboxHeight: number,
+
+	HitboxDownOffset: number?,
+
+	Behavior: string?,
+
+	GfxPos: Vector3,
+	GfxAngle: Vector3int16,
+	GfxScale: Vector3,
+	ThrowMatrix: CFrame,
+
+	-- 0x088 (0x00), the first field, is object-specific and defined below the common fields.
+	Position: Vector3,
+	Velocity: Vector3,
+
+	IntangibleTimer: s32,
+
+	ForwardVel: f32,
+	ForwardVelS32: s32?,
+
+	LeftVel: f32?,
+	UpVel: f32?,
+
+	MoveAnglePitch: s32,
+	MoveAngleYaw: s32,
+	MoveAngleRoll: s32,
+
+	FaceAnglePitch: s32,
+	FaceAngleYaw: s32,
+	FaceAngleRoll: s32,
+
+	Gravity: f32?,
+	FloorHeight: f32,
+	MoveFlags: Flags,
+
+	-- 0x0F4-0x110 (0x1B-0x22) are object specific and defined below the common fields.
+	AngleVelPitch: s32?,
+	AngleVelYaw: s32?,
+	AngleVelRoll: s32?,
+
+	HeldState: u32?,
+	WallHitboxRadius: f32?,
+
+	Friction: f32?,
+	Buoyancy: f32?,
+	DragStrength: f32?,
+	Bounciness: f32?,
+
+	InteractType: number,
+	InteractStatus: Flags,
+
+	Action: number,
+	SubAction: number,
+	PrevAction: number,
+	Timer: s32,
+
+	DistanceToMario: f32?,
+	AngleToMario: s32?,
+
+	Home: Vector3,
+
+	DamageOrCoinValue: s32?,
+	Health: s32?,
+	BhvParams: Flags,
+	BhvParams2ndByte: number,
+
+	InteractionSubtype: Flags,
+	CollisionDistance: f32?,
+
+	NumLootCoins: s32?,
+	DrawingDistance: f32?,
+
+	-- 0x1AC-0x1B2 (0x48-0x4A) are object specific and defined below the common fields.
+	WallAngle: s32,
+	FloorType: s16?,
+
+	AngleToHome: s32?,
+	Floor: RaycastResult?,
+	DeathSound: Sound?,
+}
+
+export type ObjectHitboxState = {
+	InteractType: u32,
+
+	DamageOrCoinValue: s8?,
+	NumLootCoins: s8?,
+	Health: s8?,
+
+	DownOffset: u8,
+	Radius: s16,
+	Height: s16,
+
+	HurtboxRadius: s16,
+	HurtboxHeight: s16,
 }
 
 return table.freeze({

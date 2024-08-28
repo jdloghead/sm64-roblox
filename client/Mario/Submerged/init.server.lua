@@ -10,6 +10,7 @@ local WaterStep = Enums.WaterStep
 local GroundStep = Enums.GroundStep
 local InputFlags = Enums.InputFlags
 local ActionFlags = Enums.ActionFlags
+local SurfaceClass = Enums.SurfaceClass
 local ParticleFlags = Enums.ParticleFlags
 
 local MarioFlags = Enums.MarioFlags
@@ -20,6 +21,8 @@ local MIN_SWIM_SPEED = 16
 
 local sWasAtSurface = false
 local sSwimStrength = MIN_SWIM_STRENGTH
+
+local sWaterCurrentSpeeds = { 28, 12, 8, 4 }
 
 local sBobTimer = 0
 local sBobIncrement = 0
@@ -113,9 +116,16 @@ local function performWaterFullStep(m: Mario, nextPos: Vector3)
 end
 
 local function applyWaterCurrent(m: Mario, step: Vector3): Vector3
-	-- TODO: Implement if actually needed.
-	--       This normally handles whirlpools and moving
-	--       water, neither of which I think I'll be using.
+	local floor = m.WaterSurfacePseudoFloor or m.Floor
+	local floorType = m:GetFloorType(floor)
+
+	if floor and floorType == SurfaceClass.FLOWING_WATER then
+		local force = tonumber(floor.Instance:GetAttribute("Force")) or 0
+		local currentAngle = Util.SignedShort(bit32.lshift(force, 8))
+		local currentSpeed = sWaterCurrentSpeeds[bit32.rshift(force, 8) + 1]
+
+		step += Vector3.new(currentSpeed * Util.Sins(currentAngle), 0, currentSpeed * Util.Coss(currentAngle))
+	end
 
 	return step
 end
@@ -450,7 +460,7 @@ local function updateMetalWaterJumpSpeed(m: Mario)
 	return false
 end
 
-local function commonWaterKnockbackStep(m: Mario, animation: Animation, endAction: s32, arg3: s32)
+local function commonWaterKnockbackStep(m: Mario, animation: Animation, endAction: number, arg3: number)
 	stationarySlowDown(m)
 	performWaterStep(m)
 	m:SetAnimation(animation)

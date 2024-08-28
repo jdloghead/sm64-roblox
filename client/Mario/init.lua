@@ -55,7 +55,7 @@ local FFLAG_DEGREELESSNESS_MODE = false
 local FFLAG_USE_INERTIA = false
 -- the StationaryGroundStep function does not check for wall collisions in certain conds
 -- if you have weird geometry or pushing walls, keep this on
-local FFLAG_SGS_ALWAYS_PERFORMS_STEPS = false
+local FFLAG_SGS_ALWAYS_PERFORMS_STEPS = true
 
 -- any
 local RAD_TO_SHORT = 0x10000 / (2 * math.pi)
@@ -159,7 +159,7 @@ end
 -- AUDIO
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-function Mario.PlaySound(m: Mario, sound: Instance?)
+function Mario.PlaySound(_, sound: Instance?)
 	if not sound then
 		return
 	end
@@ -173,7 +173,7 @@ function Mario.PlaySound(m: Mario, sound: Instance?)
 		local chances = sound:GetAttributes()
 
 		for name, chance in pairs(chances) do
-			for i = 1, chance do
+			for _ = 1, chance do
 				table.insert(rollTable, name)
 			end
 		end
@@ -373,80 +373,16 @@ function Mario.GetTerrainType(m: Mario): number
 	return TerrainType.DEFAULT
 end
 
-function Mario.GetFloorType(m: Mario): number
-	local ray: RaycastResult? = m.Floor
-	local instance: BasePart? = ray and ray.Instance :: BasePart
-
-	if ray and instance then
-		local material: Enum.Material = instance.Material
-
-		local ManualDefine = instance:GetAttribute("FloorSurfaceClass")
-		if SurfaceClass[ManualDefine] then
-			return SurfaceClass[ManualDefine]
-		end
-
-		-- Lava surface check
-		if material == Enum.Material.CrackedLava or instance:HasTag("Lava") then
-			return SurfaceClass.BURNING
-		end
-
-		-- Quicksand surface check
-		if (string.match(string.lower(instance.Name), "quicksand")) or instance:HasTag("Quicksand") then
-			local QuicksandType = instance:GetAttribute("QuicksandType")
-			if
-				typeof(QuicksandType) == "string"
-				and string.match(QuicksandType, "QUICKSAND")
-				and SurfaceClass[QuicksandType]
-			then
-				return SurfaceClass[QuicksandType]
-			end
-
-			return SurfaceClass.QUICKSAND
-		end
-	end
-
-	return 0
+function Mario.GetFloorType(m: Mario, other: RaycastResult?): number
+	return Util.GetFloorType(other or m.Floor)
 end
 
-function Mario.GetCeilType(m: Mario): number
-	local ceil: RaycastResult? = m.Ceil
-	local instance: BasePart? = ceil and ceil.Instance :: BasePart
-
-	if ceil and instance then
-		local material: Enum.Material = instance.Material
-
-		local ManualDefine = instance:GetAttribute("CeilSurfaceClass")
-		if SurfaceClass[ManualDefine] then
-			return SurfaceClass[ManualDefine]
-		end
-
-		if instance:HasTag("Hangable") or material == Enum.Material.DiamondPlate then
-			return SurfaceClass.HANGABLE
-		end
-	end
-
-	return 0
+function Mario.GetWallType(m: Mario, other: RaycastResult?): number
+	return Util.GetWallType(other or m.Wall)
 end
 
-function Mario.GetWallType(m: Mario, otherWall: RaycastResult?): number
-	local wall: RaycastResult? = otherWall or m.Wall
-	local instance: BasePart? = wall and wall.Instance :: BasePart
-
-	if wall and instance then
-		local material: Enum.Material = instance.Material
-
-		local ManualDefine = instance:GetAttribute("WallSurfaceClass")
-		if SurfaceClass[ManualDefine] then
-			return SurfaceClass[ManualDefine]
-		end
-
-		-- Lava surface check
-		if material == Enum.Material.CrackedLava or instance:HasTag("Lava") then
-			return SurfaceClass.BURNING
-		end
-	end
-
-	return 0
+function Mario.GetCeilType(m: Mario, other: RaycastResult?): number
+	return Util.GetCeilType(other or m.Ceil)
 end
 
 function Mario.FacingDownhill(m: Mario, turnYaw: boolean?): boolean
@@ -677,10 +613,11 @@ function Mario.SetActionAirborne(m: Mario, action: number, actionArg: number)
 	return action
 end
 
-function Mario.SetActionMoving(m: Mario, action: number, actionArg: number): number
+function Mario.SetActionMoving(m: Mario, action: number, actionArg: number?): number
 	local forwardVel = m.ForwardVel
 	local floorClass = m:GetFloorClass()
 	local mag = math.min(m.IntendedMag, 8)
+	actionArg = actionArg or 0
 
 	if action == Action.WALKING then
 		if floorClass ~= SurfaceClass.VERY_SLIPPERY then
@@ -712,6 +649,7 @@ function Mario.SetActionMoving(m: Mario, action: number, actionArg: number): num
 end
 
 function Mario.SetActionSubmerged(m: Mario, action: number, actionArg: number): number
+	actionArg = actionArg or 0
 	if action == Action.METAL_WATER_JUMP or action == Action.HOLD_METAL_WATER_JUMP then
 		m.Velocity = Util.SetY(m.Velocity, 32)
 	end
@@ -720,6 +658,7 @@ function Mario.SetActionSubmerged(m: Mario, action: number, actionArg: number): 
 end
 
 function Mario.SetActionCutscene(m: Mario, action: number, actionArg: number): number
+	actionArg = actionArg or 0
 	if action == Action.EMERGE_FROM_PIPE then
 		m.Velocity = Util.SetY(m.Velocity, 52)
 	elseif action == Action.FALL_AFTER_STAR_GRAB then
@@ -780,11 +719,7 @@ function Mario.SetJumpFromLanding(m: Mario)
 	else
 		local prev = m.PrevAction()
 
-		if prev == Action.JUMP_LAND then
-			m:SetAction(Action.DOUBLE_JUMP)
-		elseif prev == Action.FREEFALL_LAND then
-			m:SetAction(Action.DOUBLE_JUMP)
-		elseif prev == Action.SIDE_FLIP_LAND_STOP then
+		if prev == Action.JUMP_LAND or prev == Action.FREEFALL_LAND or prev == Action.SIDE_FLIP_LAND_STOP then
 			m:SetAction(Action.DOUBLE_JUMP)
 		elseif prev == Action.DOUBLE_JUMP_LAND then
 			if m.Flags:Has(MarioFlags.WING_CAP) then
@@ -1041,37 +976,10 @@ end
 
 function Mario.StopAndSetHeightToFloor(m: Mario)
 	m:SetForwardVel(0)
+	m.Inertia = Vector3.zero
 	m.Velocity *= Vector3.new(1, 0, 1)
 	m.Position = Util.SetY(m.Position, m.FloorHeight)
 	m.GfxAngle = Vector3int16.new(0, m.FaceAngle.Y, 0)
-end
-
--- Not always accurate for rotating platforms
-function Mario.GetPlatformInertiaOffsets(m: Mario, rayResult: RaycastResult?, div: number?): (Vector3int16, Vector3)
-	if rayResult then
-		local rayInstance = rayResult.Instance :: BasePart
-		local div = (tonumber(div) or 1) :: number
-
-		local FaceAngleAdd = Vector3int16.new(0, RAD_TO_SHORT * rayInstance.AssemblyAngularVelocity.Y / 22.5, 0) / div
-		local PositionAdd = (
-			rayInstance.AssemblyLinearVelocity
-			- (Util.ToRoblox(m.Position) - rayInstance.Position):Cross(rayInstance.AssemblyAngularVelocity)
-		) / div
-
-		return FaceAngleAdd, PositionAdd
-	end
-
-	return Vector3int16.new(), Vector3.zero
-end
-
-function Mario.ApplyPlatformInertia(m: Mario, rayResult: RaycastResult?, div: number?)
-	local FaceAngleAdd, PositionAdd = m:GetPlatformInertiaOffsets(rayResult, div)
-	m.FaceAngle += FaceAngleAdd
-	m.Position += PositionAdd
-
-	if FFLAG_USE_INERTIA then
-		m.Inertia = PositionAdd
-	end
 end
 
 function Mario.StationaryGroundStep(m: Mario): number
@@ -1087,7 +995,6 @@ function Mario.StationaryGroundStep(m: Mario): number
 	else
 		--! This is responsible for several stationary downwarps.
 		m.Position = Util.SetY(m.Position, m.FloorHeight)
-		m:ApplyPlatformInertia(m.Floor, 1)
 
 		m.GfxPos = Vector3.zero
 		m.GfxAngle = Vector3int16.new(0, m.FaceAngle.Y, 0)
@@ -1097,14 +1004,14 @@ function Mario.StationaryGroundStep(m: Mario): number
 end
 
 function Mario.PerformGroundQuarterStep(m: Mario, nextPos: Vector3): number
-	local lowerPos, _lowerWall = Util.FindWallCollisions(nextPos, 30, 24)
+	local lowerPos = Util.FindWallCollisions(nextPos, 30, 24)
 	nextPos = lowerPos
 
 	local upperPos, upperWall = Util.FindWallCollisions(nextPos, 60, 50)
 	nextPos = upperPos
 
 	local floorHeight, floor = Util.FindFloor(nextPos)
-	local ceilHeight, _ceil = Util.FindCeil(nextPos, floorHeight)
+	local ceilHeight = Util.FindCeil(nextPos, floorHeight)
 
 	m.Wall = upperWall
 
@@ -1160,24 +1067,17 @@ function Mario.PerformGroundStep(m: Mario): number
 	local stepResult: number
 	assert(floor)
 
-	for i = 1, 4 do
-		local InertiaRotate, InertiaMove = m:GetPlatformInertiaOffsets(floor, 4)
-		local intendedVel = m.Velocity + (InertiaMove * 4)
+	for _ = 1, 4 do
+		local intendedVel = m.Velocity
 		local intendedX = m.Position.X + floor.Normal.Y * (intendedVel.X / 4)
 		local intendedZ = m.Position.Z + floor.Normal.Y * (intendedVel.Z / 4)
 		local intendedY = m.Position.Y
-
-		if FFLAG_USE_INERTIA then
-			m.Inertia = InertiaMove * 4
-		end
 
 		local intendedPos = Vector3.new(intendedX, intendedY, intendedZ)
 		stepResult = m:PerformGroundQuarterStep(intendedPos)
 
 		if stepResult == GroundStep.LEFT_GROUND or stepResult == GroundStep.HIT_WALL_STOP_QSTEPS then
 			break
-		else
-			m.FaceAngle += InertiaRotate
 		end
 	end
 
@@ -1264,6 +1164,9 @@ function Mario.PerformAirQuarterStep(m: Mario, intendedPos: Vector3, stepArg: nu
 			m.Position = Vector3.new(nextPos.X, m.Position.Y, nextPos.Z)
 		end
 
+		--! When ceilHeight - floorHeight <= 160, the step result says that
+		-- Mario landed, but his movement is cancelled and his referenced floor
+		-- isn't updated (pedro spots)
 		m.Position = Util.SetY(m.Position, floorHeight)
 		return AirStep.LANDED
 	end
@@ -1284,11 +1187,7 @@ function Mario.PerformAirQuarterStep(m: Mario, intendedPos: Vector3, stepArg: nu
 			return AirStep.NONE
 		end
 
-		if m.Velocity.Y > 0 then
-			m.Velocity = Util.SetY(m.Velocity, 0)
-			return AirStep.NONE
-		end
-
+		--! Potential subframe downwarp->upwarp?
 		if nextPos.Y <= m.FloorHeight then
 			m.Position = Util.SetY(m.Position, floorHeight)
 			return AirStep.LANDED
@@ -1298,6 +1197,8 @@ function Mario.PerformAirQuarterStep(m: Mario, intendedPos: Vector3, stepArg: nu
 		return AirStep.HIT_WALL
 	end
 
+	--! When the wall is not completely vertical or there is a slight wall
+	-- misalignment, you can activate these conditions in unexpected situations
 	if bit32.btest(stepArg, AirStep.CHECK_LEDGE_GRAB) and upperWall == nil and lowerWall ~= nil then
 		if m:CheckLedgeGrab(lowerWall, intendedPos, nextPos) then
 			return AirStep.GRABBED_LEDGE
@@ -1441,11 +1342,7 @@ function Mario.PerformAirStep(m: Mario, maybeStepArg: number?)
 	local stepResult = AirStep.NONE
 	m.Wall = nil
 
-	if FFLAG_USE_INERTIA then
-		m.Inertia *= 0.975
-	end
-
-	for i = 1, 4 do
+	for _ = 1, 4 do
 		local intendedVel = m.Velocity + (FFLAG_USE_INERTIA and m.Inertia or Vector3.zero)
 		local intendedPos = m.Position + (intendedVel / 4)
 		local result = m:PerformAirQuarterStep(intendedPos, stepArg)
@@ -1468,6 +1365,7 @@ function Mario.PerformAirStep(m: Mario, maybeStepArg: number?)
 		m.PeakHeight = m.Position.Y
 	end
 
+	m.Inertia *= 0.985 -- Slowly drag away inertia
 	m.TerrainType = m:GetTerrainType()
 
 	if m.Action() ~= Action.FLYING then
@@ -1611,7 +1509,9 @@ function Mario.UpdateGeometryInputs(m: Mario)
 		end
 	else
 		-- Mario gets "killed" here when no floor has been found
-		-- LevelTriggerWarp(m, WARP_OP_DEATH);
+		-- LevelTriggerWarp(m, WarpOp.DEATH);
+		-- Let's just set Mario's health for now.
+		m.Health = 0xFF
 	end
 end
 
@@ -1624,7 +1524,8 @@ function Mario.UpdateInputs(m: Mario)
 	m:UpdateJoystickInputs()
 	m:UpdateGeometryInputs()
 
-	-- TODO implement first person something control
+	-- This code is an example on how to let FIRST_PERSON happen.
+	-- Do something else if you want it to, this is not ideal...
 	--[[
 	local camera = workspace.CurrentCamera
 	if camera and (camera.Focus.Position - camera.CFrame.Position).Magnitude < 1 then
@@ -1836,6 +1737,9 @@ local function checkDeathBarrier(m: Mario)
 			not m.Flags:Has(MarioFlags.FALLING_FAR)
 		then
 			m:PlaySoundIfNoFlag(Sounds.MARIO_WAAAOOOW, MarioFlags.FALLING_FAR)
+
+			-- Let's just set Mario's health for now
+			m.Health = 0xFF
 		end
 	end
 end
@@ -1916,12 +1820,15 @@ function Mario.PlayFarFallSound(m: Mario)
 	end
 end
 
+--[[
+ * Both increments and decrements Mario's HP.
+]]
 function Mario.UpdateHealth(m: Mario)
 	local terrainIsSnow = false
 
 	if m.Health > 0x100 then
 		-- When already healing or hurting Mario, Mario's HP is not changed any more here.
-		if bit32.band(m.HealCounter, m.HurtCounter) == 0 then
+		if not bit32.btest(m.HealCounter, m.HurtCounter) then
 			if m.Input:Has(InputFlags.IN_POISON_GAS) and not m.Action:Has(ActionFlags.INTANGIBLE) then
 				if not m.Flags:Has(MarioFlags.METAL_CAP) then
 					m.Health -= 4
@@ -2041,7 +1948,7 @@ function Mario.ExecuteAction(m: Mario): number
 				if group == ActionGroups.AIRBORNE then
 					m:PlayFarFallSound()
 
-					local function CommonAirborneCancels(m: Mario): boolean?
+					local function commonAirborneCancels(): boolean?
 						if m.Input:Has(InputFlags.SQUISHED) then
 							return m:DropAndSetAction(Action.SQUISHED, 0)
 						end
@@ -2057,7 +1964,7 @@ function Mario.ExecuteAction(m: Mario): number
 						return nil
 					end
 
-					cancel = CommonAirborneCancels(m)
+					cancel = commonAirborneCancels()
 					if not cancel then
 						m:PlayFarFallSound()
 					end
@@ -2080,7 +1987,7 @@ function Mario.ExecuteAction(m: Mario): number
 						m.BodyState.HeadAngle *= Vector3int16.new(1, 0, 0)
 					end
 				elseif group == ActionGroups.MOVING then
-					local function CommonMovingCancels(m: Mario): boolean?
+					local function commonMovingCancels(): boolean?
 						if m.Input:Has(InputFlags.SQUISHED) then
 							return m:DropAndSetAction(Action.SQUISHED, 0)
 						end
@@ -2094,14 +2001,14 @@ function Mario.ExecuteAction(m: Mario): number
 						return nil
 					end
 
-					cancel = CommonMovingCancels(m)
+					cancel = commonMovingCancels()
 					if not cancel then
 						if m:UpdateQuicksand(0.25) then
 							cancel = true
 						end
 					end
 				elseif group == ActionGroups.STATIONARY then
-					local function CommonStationaryCancels(m: Mario): boolean?
+					local function commonStationaryCancels(): boolean?
 						if m.Input:Has(InputFlags.SQUISHED) then
 							return m:DropAndSetAction(Action.SQUISHED, 0)
 						end
@@ -2115,17 +2022,17 @@ function Mario.ExecuteAction(m: Mario): number
 						return nil
 					end
 
-					cancel = CommonStationaryCancels(m)
+					cancel = commonStationaryCancels()
 					if not cancel then
 						if m:UpdateQuicksand(0.5) then
 							cancel = true
 						end
 					end
 				elseif group == ActionGroups.CUTSCENE then
-					local function CheckForInstantQuicksand(m: Mario): any
-						local FloorType = m:GetFloorType()
+					local function checkForInstantQuicksand(): any
+						local floorType = m:GetFloorType()
 						if
-							FloorType == SurfaceClass.INSTANT_QUICKSAND
+							floorType == SurfaceClass.INSTANT_QUICKSAND
 							and m.Action:Has(ActionFlags.INVULNERABLE)
 							and m.Action() ~= Action.QUICKSAND_DEATH
 						then
@@ -2135,7 +2042,7 @@ function Mario.ExecuteAction(m: Mario): number
 						return false
 					end
 
-					if CheckForInstantQuicksand(m) then
+					if checkForInstantQuicksand() then
 						cancel = true
 					end
 				end
@@ -2175,6 +2082,12 @@ function Mario.ExecuteAction(m: Mario): number
 	m:SquishModel()
 	m:UpdateHealth()
 	m:UpdateModel()
+
+	local group = bit32.band(m.Action(), ActionGroups.GROUP_MASK)
+
+	if group ~= ActionGroups.AIRBORNE and m.Inertia ~= Vector3.zero then
+		m.Inertia = Vector3.zero
+	end
 
 	return m.ParticleFlags()
 end
@@ -2219,7 +2132,8 @@ function Mario.new(): Mario
 
 		PrevAction = Flags.new(),
 		ParticleFlags = Flags.new(),
-		HitboxHeight = 0,
+		HitboxHeight = 100,
+		HitboxRadius = 50,
 		TerrainType = 0,
 
 		ActionState = 0,
@@ -2266,6 +2180,8 @@ function Mario.new(): Mario
 		HealCounter = 0,
 		SquishTimer = 0,
 
+		NumCoins = 0,
+
 		CapTimer = 0,
 		BurnTimer = 0,
 		PeakHeight = 0,
@@ -2285,6 +2201,11 @@ function Mario.new(): Mario
 		AnimFrameCount = 0,
 		AnimAccelAssist = 0,
 		AnimSkipInterp = 0,
+
+		-- Hacky solutions...
+		PoleObj = nil,
+		PoleYawVel = 0,
+		PolePos = 0,
 	}
 
 	return setmetatable(state, Mario)

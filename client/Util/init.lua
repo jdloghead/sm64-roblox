@@ -1,19 +1,35 @@
 --!strict
-local CollectionService = game:GetService("CollectionService")
-local RunService = game:GetService("RunService")
-local Core = script.Parent.Parent
-
 local Util = {
 	GlobalTimer = 0,
 	Scale = 1 / 20,
 }
+
+local CollectionService = game:GetService("CollectionService")
+local DataStoreService = game:GetService("DataStoreService")
+local RunService = game:GetService("RunService")
+local Core = script.Parent.Parent
+
+local Enums = require(Core.Client.Enums)
+
+local SurfaceClass = Enums.SurfaceClass
 
 local rayParams = RaycastParams.new()
 rayParams.RespectCanCollide = true
 rayParams.IgnoreWater = true
 
 local SHORT_TO_RAD = (2 * math.pi) / 0x10000
+local RAD_TO_SHORT = 0x10000 / (2 * math.pi)
 local VECTOR3_XZ = Vector3.one - Vector3.yAxis
+
+-- Converts an angle in degrees to sm64's s16 angle units. For example, DEGREES(90) == 0x4000
+local function DEGREES(x: number): number
+	return Util.SignedShort(x * RAD_TO_SHORT)
+end
+
+-- Converts an angle in degrees to sm64's angle units with un-rounded range.
+local function INT_DEGREES(x: number): number
+	return math.floor(x * RAD_TO_SHORT)
+end
 
 local TweenService = game:GetService("TweenService")
 local fadeOut = TweenInfo.new(0.5)
@@ -132,14 +148,13 @@ local function normalIdFromRaycast(result: RaycastResult): Enum.NormalId
 	local part = result.Instance :: BasePart
 	local direction = result.Normal
 
-	local maxDot, maxNormal = 0, nil
+	local maxDot = 0
 	local maxNormalId = Enum.NormalId.Front
 	for _, normalId in Enum.NormalId:GetEnumItems() do
 		local normal = part.CFrame:VectorToWorldSpace(Vector3.fromNormalId(normalId))
 		local dot = normal:Dot(direction)
 		if dot > 0 and dot > maxDot then
 			maxDot = dot
-			maxNormal = normal
 			maxNormalId = normalId
 		end
 	end
@@ -191,6 +206,40 @@ function Util.ToRotation(v: Vector3int16): CFrame
 	             * CFrame.fromAxisAngle(Vector3.zAxis, -angle.Z)
 
 	return matrix
+end
+
+-- Returns Pitch, Yaw and Roll from a CFrame in Signed 16-bit int format.
+function Util.CFrameToSM64Angles(cframe: CFrame): (number, number, number)
+	local lookVector = cframe.LookVector
+
+	local pitch = DEGREES(math.deg(math.asin(lookVector.Y)))
+	local yaw = Util.Atan2s(-lookVector.X, -lookVector.Z)
+	local roll = DEGREES(math.deg(math.atan2(lookVector.Y, math.sqrt(lookVector.X ^ 2 + lookVector.Z ^ 2))))
+
+	return pitch, yaw, roll
+end
+
+-- Converts a BasePart's AssemblyAngularVelocity to Pitch Yaw Roll in Signed 16-bit int format.
+-- For: AngleVelPitch, AngleVelYaw, AngleVelRoll
+function Util.AngularVelocityToSM64Angles(angularVel: Vector3): (number, number, number)
+	local pitch = INT_DEGREES(math.deg(angularVel.Y))
+	local yaw = INT_DEGREES(math.deg(angularVel.X))
+	local roll = INT_DEGREES(math.deg(angularVel.Z))
+
+	return pitch, yaw, roll
+end
+
+-- borrowed from @poopbarreI
+function Util.GetExtents(part: BasePart): Vector3
+	local cframe = part.CFrame
+	local size = part.Size * 0.5
+
+	return cframe.Position
+		+ (
+			cframe.RightVector:Max(-cframe.RightVector) * size.X
+			+ cframe.LookVector:Max(-cframe.LookVector) * size.Z
+			+ cframe.UpVector:Max(-cframe.UpVector) * size.Y
+		)
 end
 
 function Util.DebugWater(waterLevel: number)
@@ -398,6 +447,79 @@ function Util.FindWallCollisions(pos: Vector3, offset: number, radius: number): 
 	return pos + disp, lastWall
 end
 
+function Util.GetFloorType(floor: RaycastResult?): number
+	local instance: BasePart? = floor and floor.Instance :: BasePart
+
+	if floor and instance then
+		local material: Enum.Material = instance.Material
+
+		local ManualDefine = instance:GetAttribute("FloorSurfaceClass")
+		if SurfaceClass[ManualDefine] then
+			return SurfaceClass[ManualDefine]
+		end
+
+		-- Lava surface check
+		if material == Enum.Material.CrackedLava or instance:HasTag("Lava") then
+			return SurfaceClass.BURNING
+		end
+
+		-- Quicksand surface check
+		if (string.match(string.lower(instance.Name), "quicksand")) or instance:HasTag("Quicksand") then
+			local QuicksandType = instance:GetAttribute("QuicksandType")
+			if
+				typeof(QuicksandType) == "string"
+				and string.match(QuicksandType, "QUICKSAND")
+				and SurfaceClass[QuicksandType]
+			then
+				return SurfaceClass[QuicksandType]
+			end
+
+			return SurfaceClass.QUICKSAND
+		end
+	end
+
+	return 0
+end
+
+function Util.GetCeilType(ceil: RaycastResult?): number
+	local instance: BasePart? = ceil and ceil.Instance :: BasePart
+
+	if ceil and instance then
+		local material: Enum.Material = instance.Material
+
+		local ManualDefine = instance:GetAttribute("CeilSurfaceClass")
+		if SurfaceClass[ManualDefine] then
+			return SurfaceClass[ManualDefine]
+		end
+
+		if instance:HasTag("Hangable") or material == Enum.Material.DiamondPlate then
+			return SurfaceClass.HANGABLE
+		end
+	end
+
+	return 0
+end
+
+function Util.GetWallType(wall: RaycastResult?): number
+	local instance: BasePart? = wall and wall.Instance :: BasePart
+
+	if wall and instance then
+		local material: Enum.Material = instance.Material
+
+		local ManualDefine = instance:GetAttribute("WallSurfaceClass")
+		if SurfaceClass[ManualDefine] then
+			return SurfaceClass[ManualDefine]
+		end
+
+		-- Lava surface check
+		if material == Enum.Material.CrackedLava or instance:HasTag("Lava") then
+			return SurfaceClass.BURNING
+		end
+	end
+
+	return 0
+end
+
 -- stylua: ignore
 function Util.FindTaggedPlane(pos: Vector3, tag: string): (number, RaycastResult?)
 	local height = -11000
@@ -504,6 +626,26 @@ function Util.ApproachInt(current: number, target: number, inc: number, dec: num
 	end
 
 	return Util.SignedInt(current)
+end
+
+function Util.ApproachShort(current: number, target: number, inc: number): number
+	local dist = Util.SignedShort(target - current)
+
+	if dist >= 0 then
+		if dist > inc then
+			current += inc
+		else
+			current = target
+		end
+	else
+		if dist < -inc then
+			current -= inc
+		else
+			current = target
+		end
+	end
+
+	return Util.SignedShort(current)
 end
 
 function Util.Sins(short: number): number

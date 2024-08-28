@@ -1,0 +1,10 @@
+--!strict
+
+return {
+	PUNCH = 1,
+	KICK_OR_TRIP = 2,
+	FROM_ABOVE = 3,
+	GROUND_POUND_OR_TWIRL = 4,
+	FAST_ATTACK = 5,
+	FROM_BELOW = 6,
+}

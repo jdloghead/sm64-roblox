@@ -23,7 +23,22 @@ local Enums = {
 	TerrainType = require(script.TerrainType),
 	ParticleFlags = require(script.ParticleFlags),
 
-	InteractionType = require(script.InteractionType),
+	Object = table.freeze({
+		Flag = require(script.Object.Flag),
+		Action = require(script.Object.Action),
+		MoveFlag = require(script.Object.MoveFlag),
+		HeldState = require(script.Object.HeldState),
+		ActiveFlag = require(script.Object.ActiveFlag),
+	}),
+
+	Interaction = table.freeze({
+		AttackHandler = require(script.Interaction.AttackHandler),
+		AttackType = require(script.Interaction.AttackType),
+		Subtype = require(script.Interaction.Subtype),
+		Status = require(script.Interaction.Status),
+		Method = require(script.Interaction.Method),
+		Type = require(script.Interaction.Type),
+	}),
 }
 
 local nameIndex: { [any]: { [number]: string } } = {}

@@ -510,17 +510,10 @@
 				"RollOffMinDistance": 8,
 				"RollOffMaxDistance": 128,
 				"SoundId": ""
-			}
-		},
-        
-		{
-			"name": "MARIO_DIE",
-			"className": "Sound",
-            
-			"properties": {
-				"RollOffMinDistance": 8,
-				"RollOffMaxDistance": 128,
-				"SoundId": ""
+			},
+
+			"attributes": {
+				"Priority": 255
 			}
 		},
 
@@ -532,6 +525,10 @@
 				"RollOffMinDistance": 8,
 				"RollOffMaxDistance": 128,
 				"SoundId": ""
+			},
+
+			"attributes": {
+				"Priority": 255
 			}
 		},
         
@@ -648,6 +645,10 @@
 				"RollOffMinDistance": 8,
 				"RollOffMaxDistance": 128,
 				"SoundId": "rbxassetid://11276465437"
+			},
+
+			"attributes": {
+				"Priority": 160
 			}
 		},
         
@@ -659,6 +660,10 @@
 				"RollOffMinDistance": 8,
 				"RollOffMaxDistance": 128,
 				"SoundId": "rbxassetid://11276487760"
+			},
+
+			"attributes": {
+				"Priority": 193
 			}
 		},
         
@@ -736,6 +741,10 @@
 				"RollOffMinDistance": 8,
 				"RollOffMaxDistance": 128,
 				"SoundId": "rbxassetid://11277042405"
+			},
+
+			"attributes": {
+				"Priority": 255
 			}
 		},
         
@@ -771,6 +780,17 @@
 				"SoundId": "rbxassetid://11276529034"
 			}
 		},
+
+		{
+			"name": "MARIO_EEUH",
+			"className": "Sound",
+            
+			"properties": {
+				"RollOffMinDistance": 8,
+				"RollOffMaxDistance": 128,
+				"SoundId": "rbxassetid://11276529034"
+			}
+		},
         
 		{
 			"name": "MARIO_WAAAOOOW",
@@ -780,6 +800,10 @@
 				"RollOffMinDistance": 8,
 				"RollOffMaxDistance": 128,
 				"SoundId": ""
+			},
+
+			"attributes": {
+				"Priority": 192
 			}
 		},
         
@@ -813,6 +837,10 @@
 				"RollOffMinDistance": 8,
 				"RollOffMaxDistance": 128,
 				"SoundId": "rbxassetid://11276240769"
+			},
+
+			"attributes": {
+				"Priority": 192
 			}
 		},
         
@@ -882,33 +910,33 @@
 				"SoundId": "rbxassetid://11276223467"
 			}
 		},
-        
+
 		{
 			"name": "MOVING_FLYING",
 			"className": "Sound",
-            
+
 			"properties": {
 				"RollOffMinDistance": 8,
 				"RollOffMaxDistance": 128,
 				"SoundId": "rbxassetid://9119462210"
 			}
 		},
-        
+
 		{
 			"name": "MOVING_LAVA_BURN",
 			"className": "Sound",
-            
+
 			"properties": {
 				"RollOffMinDistance": 8,
 				"RollOffMaxDistance": 128,
 				"SoundId": ""
 			}
 		},
-        
+
 		{
 			"name": "MOVING_TERRAIN_SLIDE",
 			"className": "Sound",
-            
+
 			"properties": {
 				"RollOffMinDistance": 8,
 				"RollOffMaxDistance": 128,
@@ -916,4 +944,4 @@
 			}
 		}
 	]
-}	
+}

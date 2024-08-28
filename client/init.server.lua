@@ -33,6 +33,8 @@ local Mario = require(script.Mario)
 local Types = require(script.Types)
 local Util = require(script.Util)
 
+local PlatformDisplacement = require(script.Game.PlatformDisplacement)
+
 local Action = Enums.Action
 local Buttons = Enums.Buttons
 local MarioFlags = Enums.MarioFlags
@@ -263,10 +265,10 @@ bindInput(
 --     U
 --  < HJK >
 --     v
-bindInput(Buttons.U_JPAD, nil, Enum.KeyCode.U)
-bindInput(Buttons.L_JPAD, nil, Enum.KeyCode.H)
-bindInput(Buttons.R_JPAD, nil, Enum.KeyCode.K)
-bindInput(Buttons.D_JPAD, nil, Enum.KeyCode.J)
+bindInput(Buttons.U_JPAD, nil, Enum.KeyCode.U, Enum.KeyCode.DPadUp)
+bindInput(Buttons.L_JPAD, nil, Enum.KeyCode.H, Enum.KeyCode.DPadLeft)
+bindInput(Buttons.R_JPAD, nil, Enum.KeyCode.K, Enum.KeyCode.DPadRight)
+bindInput(Buttons.D_JPAD, nil, Enum.KeyCode.J, Enum.KeyCode.DPadDown)
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Network Dispatch
@@ -321,6 +323,30 @@ function Commands.PlaySound(player: Player, name: string)
 			else
 				-- Allow stacking.
 				canPlay = true
+			end
+		elseif name:sub(1, 5) == "MARIO" then
+			-- If the mario sound has a higher priority, delete
+			-- the ones that are lower/equal the priority.
+			-- On the other side, don't play if there's a sound
+			-- with a higher priority playing than the one
+			-- we wish to play.
+			local nextMarioSound = Sounds[name]
+
+			if nextMarioSound then
+				local nextPriority = tonumber(nextMarioSound:GetAttribute("Priority")) or 128
+
+				for _, instance: Instance in rootPart:GetChildren() do
+					if (not instance:IsA("Sound")) or (instance.Name:sub(1, 5) ~= "MARIO") then
+						continue
+					end
+
+					local priority = tonumber(instance:GetAttribute("Priority")) or 128
+					if nextPriority >= priority then
+						instance:Destroy()
+					elseif priority >= nextPriority then
+						canPlay = false
+					end
+				end
 			end
 		end
 
@@ -391,7 +417,7 @@ end
 function Commands.SetHealth(player: Player, health: number)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildWhichIsA("Humanoid")
-	local health = math.max(health, 0.01)
+	health = math.max(health, 0.01) -- Don't kill Humanoid by keeping >0
 
 	if humanoid then
 		humanoid.MaxHealth = 8
@@ -448,6 +474,9 @@ local emptyId = ""
 
 local goalCF: CFrame
 local prevCF: CFrame
+local goalCameraOffset: Vector3 = Vector3.zero
+local prevCameraOffset: Vector3 = Vector3.zero
+
 local activeTrack: AnimationTrack?
 
 local reset = Instance.new("BindableEvent")
@@ -522,11 +551,12 @@ local function onReset()
 	mario.ForwardVel = 0
 	mario.IntendedYaw = 0
 
+	mario.InvincTimer = 0
 	mario.HealCounter = 0
 	mario.HurtCounter = 0
 	mario.Health = 0x880
 
-	mario.CapTimer = 0
+	mario.CapTimer = 1
 	mario.BurnTimer = 0
 	mario.SquishTimer = 0
 	mario.QuicksandDepth = 0
@@ -535,6 +565,9 @@ local function onReset()
 	mario.Velocity = Vector3.zero
 	mario.FaceAngle = Vector3int16.new()
 
+	mario.PoleObj = nil
+
+	mario.Flags:Remove(MarioFlags.SPECIAL_CAPS)
 	mario:SetAction(Action.SPAWN_SPIN_AIRBORNE)
 end
 
@@ -599,6 +632,7 @@ local function update(dt: number)
 		subframe -= 1
 		updateCollisions()
 
+		PlatformDisplacement.ApplyMarioPlatformDisplacement(mario)
 		updateController(mario.Controller, humanoid)
 		mario:ExecuteAction()
 
@@ -606,22 +640,21 @@ local function update(dt: number)
 		local gfxPos = Util.ToRoblox(mario.Position) + gfxPosOffset
 		gfxRot = Util.ToRotation(mario.GfxAngle)
 
-		if humanoid then
-			humanoid.CameraOffset = -gfxPosOffset
-		end
-
 		mario.GfxPos = Vector3.zero
 		mario.GfxAngle = Vector3int16.new()
 
 		prevCF = goalCF
 		goalCF = CFrame.new(gfxPos) * FLIP * gfxRot
+
+		prevCameraOffset = goalCameraOffset
+		goalCameraOffset = -gfxPosOffset
 	end
 
 	-- Auto reset logic (Optional)
 	-- Remove if you have your own solutions
 	if FFLAG_AUTO_RESET_ON_DEAD then
 		local action = mario.Action()
-		
+
 		--stylua: ignore
 		local isDead = mario.Health < 0x100 or (
 			action == Action.QUICKSAND_DEATH
@@ -666,7 +699,7 @@ local function update(dt: number)
 				track:Play(animSpeed, 1, 0)
 				activeTrack = track
 
-				if loadedAnims[anim.Name] == nil then
+				if not loadedAnims[anim.Name] then
 					loadedAnims[anim.Name] = track
 				end
 			end
@@ -714,6 +747,11 @@ local function update(dt: number)
 					else nextCF
 
 				alignCF.CFrame = cf.Rotation
+			end
+
+			if humanoid then
+				local nextCamOffset = prevCameraOffset:Lerp(goalCameraOffset, subframe)
+				humanoid.CameraOffset = nextCamOffset
 			end
 
 			local isDebug = character:GetAttribute("Debug")
@@ -776,7 +814,11 @@ local function update(dt: number)
 			local headAngle = bodyState.HeadAngle
 			local torsoAngle = bodyState.TorsoAngle
 
-			if actionId ~= Action.BUTT_SLIDE and actionId ~= Action.WALKING then
+			if
+				actionId ~= Action.BUTT_SLIDE
+				and actionId ~= Action.WALKING
+				and actionId ~= Action.RIDING_SHELL_GROUND
+			then
 				bodyState.TorsoAngle *= 0
 			end
 

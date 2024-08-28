@@ -736,7 +736,7 @@ local function tiltBodyButtSlide(m: Mario)
 end
 
 local function commonSlideAction(m: Mario, endAction: number, airAction: number, anim: Animation)
-	local pos = m.Position
+	-- local pos = m.Position
 	m:PlaySound(Sounds.MOVING_TERRAIN_SLIDE)
 	m:AdjustSoundForSpeed()
 
@@ -839,7 +839,7 @@ end
 local function stomachSlideAction(m: Mario, stopAction: number, airAction: number, anim: Animation)
 	if m.ActionTimer == 5 then
 		if not m.Input:Has(InputFlags.ABOVE_SLIDE) and m.Input:Has(InputFlags.A_PRESSED, InputFlags.B_PRESSED) then
-			return m:SetAction(if m.ForwardVel >= 0 then Action.FORWARD_ROLLOUT else Action.BACKWARD_ROLLOUT)
+			return m:DropAndSetAction(if m.ForwardVel >= 0 then Action.FORWARD_ROLLOUT else Action.BACKWARD_ROLLOUT)
 		end
 	else
 		m.ActionTimer += 1
@@ -1408,20 +1408,7 @@ DEF_ACTION(Action.SLIDE_KICK_SLIDE, function(m: Mario)
 end)
 
 DEF_ACTION(Action.STOMACH_SLIDE, function(m: Mario)
-	if m.ActionTimer == 5 then
-		if not m.Input:Has(InputFlags.ABOVE_SLIDE) and m.Input:Has(InputFlags.A_PRESSED, InputFlags.B_PRESSED) then
-			return m:SetAction(if m.ForwardVel >= 0 then Action.FORWARD_ROLLOUT else Action.BACKWARD_ROLLOUT)
-		end
-	else
-		m.ActionTimer += 1
-	end
-
-	if updateSliding(m, 4) then
-		return m:SetAction(Action.STOMACH_SLIDE_STOP)
-	end
-
-	commonSlideAction(m, Action.STOMACH_SLIDE_STOP, Action.FREEFALL, Animations.SLIDE_DIVE)
-	return false
+	return stomachSlideAction(m, Action.STOMACH_SLIDE_STOP, Action.FREEFALL, Animations.SLIDE_DIVE)
 end)
 
 DEF_ACTION(Action.DIVE_SLIDE, function(m: Mario)
@@ -1538,7 +1525,7 @@ DEF_ACTION(Action.LONG_JUMP_LAND, function(m: Mario)
 	end
 
 	if not m.Input:Has(InputFlags.NONZERO_ANALOG) then
-		m:PlaySoundIfNoFlag(Sounds.MARIO_UH, MarioFlags.MARIO_SOUND_PLAYED)
+		m:PlaySoundIfNoFlag(Sounds.MARIO_UH2, MarioFlags.MARIO_SOUND_PLAYED)
 	end
 
 	commonLandingAction(
