@@ -3,6 +3,8 @@
 ----------------------------------------------FLAGS------------------------------------------------
 -- Calls onReset when mario is considered to be in a dead state
 local FFLAG_AUTO_RESET_ON_DEAD = true
+-- If the rendered character shouldn't have the position interpolated between frames
+local FFLAG_NO_INTERP = false
 ---------------------------------------------------------------------------------------------------
 
 local Core = script.Parent
@@ -271,8 +273,10 @@ bindInput(Buttons.L_JPAD, nil, Enum.KeyCode.H, Enum.KeyCode.DPadLeft)
 bindInput(Buttons.R_JPAD, nil, Enum.KeyCode.K, Enum.KeyCode.DPadRight)
 bindInput(Buttons.D_JPAD, nil, Enum.KeyCode.J, Enum.KeyCode.DPadDown)
 
-do -- Temp
+-- ?
+if type(Interaction.ProcessMarioInteractions) == "function" then
 	local Mario = Mario :: any
+
 	function Mario.ProcessInteractions(m: Mario)
 		return Interaction.ProcessMarioInteractions(m)
 	end
@@ -747,7 +751,7 @@ local function update(dt: number)
 			end
 
 			if alignCF then
-				local nextCF = prevCF:Lerp(goalCF, subframe)
+				local nextCF = if FFLAG_NO_INTERP then goalCF else prevCF:Lerp(goalCF, subframe)
 
 				-- stylua: ignore
 				cf = if mario.AnimSkipInterp > 0
@@ -758,7 +762,9 @@ local function update(dt: number)
 			end
 
 			if humanoid then
-				local nextCamOffset = prevCameraOffset:Lerp(goalCameraOffset, subframe)
+				local nextCamOffset = if FFLAG_NO_INTERP
+					then goalCameraOffset
+					else prevCameraOffset:Lerp(goalCameraOffset, subframe)
 				humanoid.CameraOffset = nextCamOffset
 			end
 
@@ -902,7 +908,7 @@ player.CharacterAdded:Connect(function()
 	table.clear(loadedAnims)
 end)
 
-while task.wait(1) do
+while true do
 	local success = pcall(function()
 		return StarterGui:SetCore("ResetButtonCallback", reset)
 	end)
@@ -910,6 +916,8 @@ while task.wait(1) do
 	if success then
 		break
 	end
+
+	task.wait(0.25)
 end
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------

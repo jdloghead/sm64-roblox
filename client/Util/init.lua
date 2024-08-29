@@ -5,13 +5,22 @@ local Util = {
 }
 
 local CollectionService = game:GetService("CollectionService")
-local DataStoreService = game:GetService("DataStoreService")
+local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local Core = script.Parent.Parent
 
 local Enums = require(Core.Client.Enums)
 
 local SurfaceClass = Enums.SurfaceClass
+
+----------------------------------------------FLAGS------------------------------------------------
+-- Don't show debug long raycasts that hit nothing
+local FFLAG_RAY_DBG_IGNORE_LONG_NIL = false
+----------------------------------------------FLAGS------------------------------------------------
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Helpers
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 local rayParams = RaycastParams.new()
 rayParams.RespectCanCollide = true
@@ -31,7 +40,6 @@ local function INT_DEGREES(x: number): number
 	return math.floor(x * RAD_TO_SHORT)
 end
 
-local TweenService = game:GetService("TweenService")
 local fadeOut = TweenInfo.new(0.5)
 
 local waterPlane = Instance.new("BoxHandleAdornment")
@@ -177,6 +185,10 @@ local function vectorModifier(getArgs: (Vector3 | Vector3int16, number) -> (numb
 	end
 end
 
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Util
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 Util.SetX = vectorModifier(function(vector, x)
 	return x, vector.Y, vector.Z
 end)
@@ -239,11 +251,9 @@ function Util.GetExtents(part: BasePart): Vector3
 	local size = part.Size * 0.5
 
 	return cframe.Position
-		+ (
-			cframe.RightVector:Max(-cframe.RightVector) * size.X
-			+ cframe.LookVector:Max(-cframe.LookVector) * size.Z
-			+ cframe.UpVector:Max(-cframe.UpVector) * size.Y
-		)
+		+ cframe.RightVector:Abs() * size.X
+		+ cframe.UpVector:Abs() * size.Y
+		+ cframe.LookVector:Abs() * size.Z
 end
 
 function Util.DebugWater(waterLevel: number)
@@ -297,13 +307,15 @@ function Util.Raycast(pos: Vector3, dir: Vector3, maybeParams: RaycastParams?, w
 	local params = maybeParams or rayParams
 	local result = root:Raycast(pos, dir, params)
 
-	if script:GetAttribute("Debug") then
+	local length = result and result.Distance or dir.Magnitude
+
+	if script:GetAttribute("Debug") and not (FFLAG_RAY_DBG_IGNORE_LONG_NIL and length > 256 and result == nil) then
 		local color = Color3.new(result and 0 or 1, result and 1 or 0, 0)
 
 		local line = Instance.new("LineHandleAdornment")
-		line.Length = result and result.Distance or dir.Magnitude
+		line.Length = length
 		line.CFrame = CFrame.new(pos, pos + dir)
-		line.Thickness = 3
+		line.Thickness = 6
 		line.Color3 = color
 		line.Adornee = workspace.Terrain
 		line.Parent = workspace.Terrain
@@ -337,9 +349,11 @@ function Util.RaycastSM64(pos: Vector3, dir: Vector3, maybeParams: RaycastParams
     return result
 end
 
-function Util.FindFloor(pos: Vector3): (number, RaycastResult?)
+function Util.FindFloor(pos: Vector3, dir: Vector3?): (number, RaycastResult?)
 	local newPos = pos
 	local height = -11000
+
+	dir = typeof(dir) == "Vector3" and dir or -Vector3.yAxis * 15000 / Util.Scale
 
 	if Core:GetAttribute("TruncateBounds") then
 		local trunc = Vector3int16.new(pos.X, pos.Y, pos.Z)
@@ -364,8 +378,7 @@ function Util.FindFloor(pos: Vector3): (number, RaycastResult?)
 	local unqueried: { [BasePart]: any } = {}
 
 	for i = 1, 2 do
-		result =
-			Util.RaycastSM64(newPos + (Vector3.yAxis * 100), -Vector3.yAxis * 15000 / Util.Scale, rayParams, workspace)
+		result = Util.RaycastSM64(newPos + (Vector3.yAxis * 100), dir, rayParams, workspace)
 		local _, ignored = shouldIgnoreSurface(result, "Floor")
 		local hit: BasePart? = result and (result.Instance :: BasePart)
 
@@ -423,13 +436,20 @@ function Util.FindCeil(pos: Vector3, height: number?): (number, RaycastResult?)
 	return newHeight, result
 end
 
-function Util.FindWallCollisions(pos: Vector3, offset: number, radius: number): (Vector3, RaycastResult?)
+function Util.FindWallCollisions(
+	pos: Vector3,
+	offset: number,
+	radius: number
+): (Vector3, RaycastResult?, { RaycastResult })
 	local origin = pos + Vector3.new(0, offset, 0)
 	local lastWall: RaycastResult?
+	local walls = {} :: { RaycastResult }
 	local disp = Vector3.zero
 
-	for i, dir in CARDINAL do
-		local contact = Util.RaycastSM64(origin, dir * radius)
+	local radiusD = (radius + 0.1)
+
+	for _, dir in CARDINAL do
+		local contact = Util.RaycastSM64(origin, dir * radiusD)
 		contact = shouldIgnoreSurface(contact, "Wall")
 
 		if contact then
@@ -442,13 +462,17 @@ function Util.FindWallCollisions(pos: Vector3, offset: number, radius: number): 
 
 				if dist < radius then
 					disp += (contact.Normal * VECTOR3_XZ) * (radius - dist)
+				end
+
+				if dist < radiusD then
 					lastWall = contact
+					table.insert(walls, contact)
 				end
 			end
 		end
 	end
 
-	return pos + disp, lastWall
+	return pos + disp, lastWall, walls
 end
 
 function Util.GetFloorType(floor: RaycastResult?): number
@@ -522,6 +546,14 @@ function Util.GetWallType(wall: RaycastResult?): number
 	end
 
 	return 0
+end
+
+function Util.GetIgnoredCollisions(ray: RaycastResult?): (boolean, boolean, boolean)
+	local _, ignoreWall = shouldIgnoreSurface(ray, "Wall")
+	local _, ignoreFloor = shouldIgnoreSurface(ray, "Floor")
+	local _, ignoreCeil = shouldIgnoreSurface(ray, "Ceil")
+
+	return ignoreWall, ignoreFloor, ignoreCeil
 end
 
 -- stylua: ignore

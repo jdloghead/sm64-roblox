@@ -508,13 +508,28 @@ DEF_ACTION(Action.SLIDE_KICK_SLIDE_STOP, function(m: Mario)
 end)
 
 DEF_ACTION(Action.START_CROUCHING, function(m: Mario)
+	if m.Input:Has(InputFlags.STOMPED) then
+		return m:SetAction(Action.SHOCKWAVE_BOUNCE)
+	end
+
+	if m.Input:Has(InputFlags.OFF_FLOOR) then
+		return m:SetAction(Action.FREEFALL)
+	end
+
+	if m.Input:Has(InputFlags.A_PRESSED) then
+		return m:SetAction(Action.BACKFLIP)
+	end
+
+	if m.Input:Has(InputFlags.ABOVE_SLIDE) then
+		return m:SetAction(Action.BEGIN_SLIDING)
+	end
+
 	if m:CheckCommonActionExits() then
 		return true
 	end
 
 	m:StationaryGroundStep()
 	m:SetAnimation(Animations.START_CROUCHING)
-
 	if m:IsAnimPastEnd() then
 		m:SetAction(Action.CROUCHING)
 	end
@@ -528,8 +543,7 @@ DEF_ACTION(Action.STOP_CROUCHING, function(m: Mario)
 	end
 
 	m:StationaryGroundStep()
-	m:SetAnimation(Animations.START_CROUCHING)
-
+	m:SetAnimation(Animations.STOP_CROUCHING)
 	if m:IsAnimPastEnd() then
 		m:SetAction(Action.IDLE)
 	end

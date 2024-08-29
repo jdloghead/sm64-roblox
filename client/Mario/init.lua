@@ -2,14 +2,30 @@
 local Mario = {}
 Mario.__index = Mario
 
+----------------------------------------------FLAGS------------------------------------------------
+-- (cheat) walk on every single slope angle
+local FFLAG_FLOOR_NEVER_SLIPPERY = false
+-- (cheat) god mode
+local FFLAG_DEGREELESSNESS_MODE = false
+-- (misc) use inertia velocity for airborne
+local FFLAG_USE_INERTIA = false
+-- the StationaryGroundStep function does not check for wall collisions in
+-- certain conds. if you have weird geometry or pushing walls, keep this on
+local FFLAG_SGS_ALWAYS_PERFORMS_STEPS = true
+-- fixes wall-cucking (See https://youtu.be/TSCzC-WECw8?t=42)
+local FFLAG_FIX_WALLCUCKING = false
+-- instead of quarter-step with no verification, it will be a single step,
+-- then fire a ray between old position and next position to avoid clipping
+-- and other weird geometry things (See: https://youtu.be/TSCzC-WECw8?t=90)
+local FFLAG_CONTINOUS_INSTEAD_OF_QSTEP = false
+---------------------------------------------------------------------------------------------------
+
 local SM64 = script.Parent
 local Core = SM64.Parent
 
 local Util = require(SM64.Util)
 local Enums = require(SM64.Enums)
 local Shared = require(Core.Shared)
-
--- local Interaction = require(SM64.Game.Interaction)
 
 local Sounds = Shared.Sounds
 local Animations = Shared.Animations
@@ -46,21 +62,88 @@ export type Flags = Types.Flags
 export type Class = Mario
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- HELPERS
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+local SHORT_TO_RAD = (2 * math.pi) / 0x10000
+local Vector3XZ = Vector3.new(1, 0, 1)
+local RAD90 = (math.pi / 2)
+
+local function absAngleDiff(x0: number, x1: number): number
+	local diff = Util.SignedShort(x1 - x0)
+
+	if diff == -0x8000 then
+		diff = -0x7FFF
+	end
+
+	if diff < 0 then
+		diff = -diff
+	end
+
+	return diff
+end
+
+local function solveBestWallFromAngle(walls: { RaycastResult }, angle: number): RaycastResult?
+	local angleDiffStore = math.huge
+	local best: RaycastResult?
+
+	for _, wall in ipairs(walls) do
+		local angleDiff = absAngleDiff(Util.SignedShort(angle - 0x8000), Util.Atan2s(wall.Normal.Z, wall.Normal.X))
+
+		if angleDiff < angleDiffStore then
+			angleDiffStore = angleDiff
+			best = wall
+		end
+	end
+
+	return best
+end
+
+local function solveContinuousClip(m: Mario, nextPos: Vector3, heightOff: number?): Vector3
+	if FFLAG_CONTINOUS_INSTEAD_OF_QSTEP then
+		local heightOffset: number = (tonumber(heightOff) or 0)
+		local origin = m.Position + (Vector3.yAxis * heightOffset)
+		local delta = nextPos - m.Position
+
+		local nextClip = Util.RaycastSM64(origin, delta)
+		local maybeNextPos = nextPos
+
+		if nextClip then
+			local ignoreWall, ignoreFloor, ignoreCeil = Util.GetIgnoredCollisions(nextClip)
+			local normalY = nextClip.Normal.Y
+			local push = Vector3.zero
+
+			if not ignoreWall and (math.abs(normalY) < 0.01) then
+				push += nextClip.Normal * 5
+			end
+
+			maybeNextPos = Util.SetY(nextClip.Position + push, nextPos.Y)
+
+			-- safe floor push, otherwise mario'd get propulsed upwards/downwards in
+			-- a weird way since the origin vector is higher than m.Position
+			if (not ignoreFloor) and normalY >= 0.01 then
+				maybeNextPos = Util.SetY(maybeNextPos, nextPos.Y + 5)
+			elseif (not ignoreCeil) and normalY <= -0.01 then
+				maybeNextPos = Util.SetY(maybeNextPos, nextPos.Y - 5)
+			end
+		end
+
+		-- Oops! Manual fix!
+		if (m.Floor and math.abs(m.Floor.Normal.Y) < 0.707) and math.abs(m.Position.Y - m.FloorHeight) < 1.0 then
+			local angleDiff = ((SHORT_TO_RAD * (m.FloorAngle - m.FaceAngle.Y)) - RAD90) / RAD90
+			maybeNextPos += Vector3.yAxis * 16 * math.clamp(angleDiff, -1, 1) * math.sign(m.ForwardVel)
+		end
+
+		return maybeNextPos
+	end
+
+	return nextPos
+end
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- VARIABLES
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
--- Everything's too slippery sometimes...
-local FFLAG_FLOOR_NEVER_SLIPPERY = false
--- IDDQD (god mode)
-local FFLAG_DEGREELESSNESS_MODE = false
--- (misc) use inertia velocity for airborne
-local FFLAG_USE_INERTIA = false
--- the StationaryGroundStep function does not check for wall collisions in certain conds
--- if you have weird geometry or pushing walls, keep this on
-local FFLAG_SGS_ALWAYS_PERFORMS_STEPS = true
-
--- any
-local RAD_TO_SHORT = 0x10000 / (2 * math.pi)
 local sMovingSandSpeeds = { 12, 8, 4, 0 }
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -394,7 +477,8 @@ function Mario.FacingDownhill(m: Mario, turnYaw: boolean?): boolean
 		faceAngleYaw += 0x8000
 	end
 
-	return math.abs(m.FloorAngle - faceAngleYaw) < 0x4000
+	faceAngleYaw = Util.SignedShort(m.FloorAngle - faceAngleYaw)
+	return math.abs(faceAngleYaw) < 0x4000
 end
 
 function Mario.FloorIsSlippery(m: Mario)
@@ -402,18 +486,17 @@ function Mario.FloorIsSlippery(m: Mario)
 
 	if floor then
 		local floorClass = m:GetFloorClass()
-		local deg = 90
+		local normY = 0.7880108
 
 		if floorClass == SurfaceClass.VERY_SLIPPERY then
-			deg = 10
+			normY = 0.9848077 -- ~cos(10 deg)
 		elseif floorClass == SurfaceClass.SLIPPERY then
-			deg = 20
+			normY = 0.9396926 -- ~cos(20 deg)
 		elseif floorClass == SurfaceClass.NOT_SLIPPERY then
-			deg = 38
+			return false
 		end
 
-		local rad = math.rad(deg)
-		return floor.Normal.Y <= math.cos(rad)
+		return floor.Normal.Y <= normY
 	end
 
 	return false
@@ -634,7 +717,7 @@ function Mario.SetActionMoving(m: Mario, action: number, actionArg: number?): nu
 			m.ForwardVel = mag / 2
 		end
 	elseif action == Action.BEGIN_SLIDING then
-		if m:FacingDownhill() then
+		if m:FacingDownhill(false) then
 			action = Action.BUTT_SLIDE
 		else
 			action = Action.STOMACH_SLIDE
@@ -979,7 +1062,7 @@ end
 function Mario.StopAndSetHeightToFloor(m: Mario)
 	m:SetForwardVel(0)
 	m.Inertia = Vector3.zero
-	m.Velocity *= Vector3.new(1, 0, 1)
+	m.Velocity *= Vector3XZ
 	m.Position = Util.SetY(m.Position, m.FloorHeight)
 	m.GfxAngle = Vector3int16.new(0, m.FaceAngle.Y, 0)
 end
@@ -1006,11 +1089,17 @@ function Mario.StationaryGroundStep(m: Mario): number
 end
 
 function Mario.PerformGroundQuarterStep(m: Mario, nextPos: Vector3): number
+	nextPos = solveContinuousClip(m, nextPos, 60)
+
 	local lowerPos = Util.FindWallCollisions(nextPos, 30, 24)
 	nextPos = lowerPos
 
-	local upperPos, upperWall = Util.FindWallCollisions(nextPos, 60, 50)
+	local upperPos, upperWall, allWalls = Util.FindWallCollisions(nextPos, 60, 50)
 	nextPos = upperPos
+
+	if FFLAG_FIX_WALLCUCKING then
+		upperWall = solveBestWallFromAngle(allWalls, m.FaceAngle.Y)
+	end
 
 	local floorHeight, floor = Util.FindFloor(nextPos)
 	local ceilHeight = Util.FindCeil(nextPos, floorHeight)
@@ -1069,10 +1158,11 @@ function Mario.PerformGroundStep(m: Mario): number
 	local stepResult: number
 	assert(floor)
 
-	for _ = 1, 4 do
+	local steps = FFLAG_CONTINOUS_INSTEAD_OF_QSTEP and 1 or 4
+	for _ = 1, steps do
 		local intendedVel = m.Velocity
-		local intendedX = m.Position.X + floor.Normal.Y * (intendedVel.X / 4)
-		local intendedZ = m.Position.Z + floor.Normal.Y * (intendedVel.Z / 4)
+		local intendedX = m.Position.X + floor.Normal.Y * (intendedVel.X / steps)
+		local intendedZ = m.Position.Z + floor.Normal.Y * (intendedVel.Z / steps)
 		local intendedY = m.Position.Y
 
 		local intendedPos = Vector3.new(intendedX, intendedY, intendedZ)
@@ -1131,13 +1221,17 @@ function Mario.CheckLedgeGrab(m: Mario, wall: RaycastResult, intendedPos: Vector
 end
 
 function Mario.PerformAirQuarterStep(m: Mario, intendedPos: Vector3, stepArg: number)
-	local nextPos = intendedPos
+	local nextPos = solveContinuousClip(m, intendedPos, 75)
 
-	local upperPos, upperWall = Util.FindWallCollisions(nextPos, 150, 50)
+	local upperPos, upperWall, allWalls = Util.FindWallCollisions(nextPos, 150, 50)
 	nextPos = upperPos
 
 	local lowerPos, lowerWall = Util.FindWallCollisions(nextPos, 30, 50)
 	nextPos = lowerPos
+
+	if FFLAG_FIX_WALLCUCKING then
+		upperWall = solveBestWallFromAngle(allWalls, m.FaceAngle.Y)
+	end
 
 	local floorHeight, floor = Util.FindFloor(nextPos)
 	local ceilHeight = Util.FindCeil(nextPos, floorHeight)
@@ -1229,6 +1323,13 @@ function Mario.PerformAirQuarterStep(m: Mario, intendedPos: Vector3, stepArg: nu
 		if math.abs(wallDYaw) > 0x6000 then
 			return AirStep.HIT_WALL
 		end
+	end
+
+	-- [on continuous step] ur getting nerfed kid
+	-- (Shouldn't be done on ground step)
+	if m.ForwardVel < -256 and upperWall and FFLAG_CONTINOUS_INSTEAD_OF_QSTEP then
+		m:SetForwardVel(0)
+		return GroundStep.HIT_WALL_STOP_QSTEPS
 	end
 
 	return AirStep.NONE
@@ -1344,9 +1445,10 @@ function Mario.PerformAirStep(m: Mario, maybeStepArg: number?)
 	local stepResult = AirStep.NONE
 	m.Wall = nil
 
-	for _ = 1, 4 do
+	local steps = FFLAG_CONTINOUS_INSTEAD_OF_QSTEP and 1 or 4
+	for _ = 1, steps do
 		local intendedVel = m.Velocity + (FFLAG_USE_INERTIA and m.Inertia or Vector3.zero)
-		local intendedPos = m.Position + (intendedVel / 4)
+		local intendedPos = m.Position + (intendedVel / steps)
 		local result = m:PerformAirQuarterStep(intendedPos, stepArg)
 
 		if result ~= AirStep.NONE then
@@ -1721,7 +1823,6 @@ function Mario.CheckKickOrPunchWall(m: Mario)
 	end
 end
 
---[[
 function Mario.ProcessInteractions(m: Mario)
 	if m.InvincTimer > 0 then
 		m.InvincTimer -= 1
@@ -1732,7 +1833,6 @@ function Mario.ProcessInteractions(m: Mario)
 	m:CheckKickOrPunchWall()
 	m.Flags:Remove(MarioFlags.PUNCHING, MarioFlags.KICKING, MarioFlags.TRIPPING)
 end
-]]
 
 -- You have to reset/respawn Mario manually on your own.
 local function checkDeathBarrier(m: Mario)
@@ -1956,11 +2056,7 @@ function Mario.ExecuteAction(m: Mario): number
 	m:UpdateInputs()
 
 	m:HandleSpecialFloors()
-
-	do -- Temp
-		local m = m :: any
-		m:ProcessInteractions()
-	end
+	m:ProcessInteractions()
 
 	if m.Floor == nil then
 		return 0

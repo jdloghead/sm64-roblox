@@ -3,7 +3,11 @@ local PlatformDisplacement = {}
 
 local SM64 = script.Parent.Parent
 local Util = require(SM64.Util)
+local Enums = require(SM64.Enums)
 local Mario = require(SM64.Mario)
+
+local ActionFlags = Enums.ActionFlags
+local SurfaceClass = Enums.SurfaceClass
 
 type Mario = Mario.Mario
 type Object = any -- Use own SM64 object reference if you have own implementation
@@ -53,9 +57,19 @@ end
 function PlatformDisplacement.ApplyMarioPlatformDisplacement(m: Mario)
 	local floor = m.Floor
 	local platform = (floor and floor.Instance) :: BasePart?
-	local offFloor = math.abs(m.Position.Y - m.FloorHeight) > 4.0
 
-	if (floor and platform) and not offFloor then
+	local offPlatform = math.abs(m.Position.Y - m.FloorHeight) > 4.0
+	local climbingCeil = false
+
+	-- Let's apply displacement on a moving hangable ceil
+	-- cuz it's FUN!
+	if m:GetCeilType() == SurfaceClass.HANGABLE and m.Action:Has(ActionFlags.HANGING) then
+		local ceil = m.Ceil
+		platform = (ceil and ceil.Instance) :: BasePart?
+		climbingCeil = true
+	end
+
+	if platform and ((not offPlatform) or climbingCeil) then
 		return PlatformDisplacement.ApplyPlatformDisplacement(m, true, platform)
 	end
 end
