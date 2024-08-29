@@ -80,6 +80,10 @@ local GetTagParams: (string) -> RaycastParams
 do
 	-- Add new parts to filters
 	local function append(params: RaycastParams, object: BasePart)
+		if object:IsDescendantOf(workspace.CurrentCamera) or object:IsDescendantOf(workspace.Terrain) then
+			return
+		end
+
 		params:AddToFilter(object)
 
 		local removing: RBXScriptConnection

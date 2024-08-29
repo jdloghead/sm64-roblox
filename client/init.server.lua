@@ -33,6 +33,7 @@ local Mario = require(script.Mario)
 local Types = require(script.Types)
 local Util = require(script.Util)
 
+local Interaction = require(script.Game.Interaction)
 local PlatformDisplacement = require(script.Game.PlatformDisplacement)
 
 local Action = Enums.Action
@@ -269,6 +270,13 @@ bindInput(Buttons.U_JPAD, nil, Enum.KeyCode.U, Enum.KeyCode.DPadUp)
 bindInput(Buttons.L_JPAD, nil, Enum.KeyCode.H, Enum.KeyCode.DPadLeft)
 bindInput(Buttons.R_JPAD, nil, Enum.KeyCode.K, Enum.KeyCode.DPadRight)
 bindInput(Buttons.D_JPAD, nil, Enum.KeyCode.J, Enum.KeyCode.DPadDown)
+
+do -- Temp
+	local Mario = Mario :: any
+	function Mario.ProcessInteractions(m: Mario)
+		return Interaction.ProcessMarioInteractions(m)
+	end
+end
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Network Dispatch

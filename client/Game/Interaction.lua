@@ -1,5 +1,10 @@
 -- SM64 Objects are a nightmare!!!!!!!!!!!!!!!!!
 -- WE HAVE TO COME UP WITH OBJECT-LESS SOLUTIONS
+--
+-- This module will attempt to emulate these objects,
+-- but if you have your own SM64 object port, change
+-- anything otherwise-related.
+
 --!strict
 local Interaction = {}
 
@@ -10,22 +15,38 @@ local Mario = require(SM64.Mario)
 local Enums = require(SM64.Enums)
 local Util = require(SM64.Util)
 
-local Animations = Mario.Animations
 local Sounds = Mario.Sounds
 
 local Action = Enums.Action
 local ActionFlags = Enums.ActionFlags
-local ActionGroup = Enums.ActionGroups
 
 local MarioFlags = Enums.MarioFlags
 local ParticleFlags = Enums.ParticleFlags
 
 local InteractionEnums = Enums.Interaction
 local InteractionType = InteractionEnums.Type
-local InteractionStatus = InteractionEnums.Status
 local AttackType = InteractionEnums.AttackType
+local InteractionStatus = InteractionEnums.Status
+local InteractionMethod = InteractionEnums.Method
+local InteractionSubtype = InteractionEnums.Subtype
 
 type Mario = Mario.Mario
+
+-- Replace with your own Object type, if any
+type Object = {
+	Position: Vector3,
+	Velocity: Vector3,
+
+	HitboxRadius: number,
+	HitboxHeight: number,
+
+	DamageOrCoinValue: number,
+
+	-- PseudoObject values, they're SPECIFICALLY for
+	-- emulating SM64 objects.
+	RbxPart: BasePart?,
+	CapFlag: number?,
+}
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Knockback Actions
@@ -44,8 +65,70 @@ local sBackwardKnockbackActions = {
 }
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Roblox Helpers
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+local FLIP = CFrame.Angles(0, math.pi, 0)
+
+-- Helper for pseudo-objects
+local function isPseudoObject(t: any): boolean
+	-- I'd use metatables for objects, like Mario does.
+	-- Only returns true for simple tables.
+	if typeof(t) == "table" and not getmetatable(t) then
+		return true
+	end
+
+	return false
+end
+
+-- Helper for pseudo-objects
+local function preparePseudoObject(o: any): any
+	if isPseudoObject(o) then
+		local rbxPart = o.RbxPart :: BasePart?
+
+		if rbxPart then
+			-- We're gonna emulate some properties using just a part.
+			local pos = Util.ToSM64(rbxPart.Position)
+			local extents = Util.GetExtents(rbxPart) / Util.Scale
+			local extentsSize = extents - pos
+
+			-- Move the position downwards.
+			pos -= Vector3.yAxis * extentsSize.Y
+
+			-- Emulate values.
+			o.Position = pos
+			o.HitboxRadius = math.max(extentsSize.X, extentsSize.Z)
+			o.HitboxHeight = extentsSize.Y
+
+			local pitch, yaw, roll = Util.CFrameToSM64Angles(rbxPart.CFrame * FLIP)
+			o.FaceAnglePitch = pitch
+			o.FaceAngleYaw = yaw
+			o.FaceAngleRoll = roll
+		else
+			-- Or not
+			o.Position = o.Position or Vector3.zero
+			o.HitboxHeight = o.HitboxHeight or 0
+			o.HitboxRadius = o.HitboxRadius or 0
+
+			-- ?
+			o.FaceAnglePitch = o.FaceAnglePitch or 0
+			o.FaceAngleYaw = o.FaceAngleYaw or 0
+			o.FaceAngleRoll = o.FaceAngleRoll or 0
+		end
+	end
+
+	return o
+end
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Helpers
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+local sDelayInvincTimer = false
+local sInvulnerable = false
+
+-- local sDisplayingDoorText = false
+-- local sJustTeleported = false
 
 local acceptableCapFlags: { number } = {
 	MarioFlags.NORMAL_CAP,
@@ -55,21 +138,21 @@ local acceptableCapFlags: { number } = {
 }
 
 -- Vector3 point must be in SM64 Units.
-local function marioObjAngleToObject(m: Mario, point: Vector3): number
-	local dx = point.X - m.Position.X
-	local dz = point.Z - m.Position.Z
+local function marioObjAngleToObject(m: Mario, o: Object): number
+	local dx = o.Position.X - m.Position.X
+	local dz = o.Position.Z - m.Position.Z
 
 	return Util.Atan2s(dz, dx)
 end
 
 -- Vector3 point must be in SM64 Units.
-local function determineInteraction(m: Mario, point: Vector3): number
+local function determineInteraction(m: Mario, o: Object): number
 	local interaction = 0
-	local action = m.Action
+	local action = m.Action()
 
-	if action:Has(ActionFlags.ATTACKING) then
-		if action() == Action.PUNCHING or action() == Action.MOVE_PUNCHING or action() == Action.JUMP_KICK then
-			local dYawToObject = Util.SignedShort(marioObjAngleToObject(m, point) - m.FaceAngle.Y)
+	if m.Action:Has(ActionFlags.ATTACKING) then
+		if action == Action.PUNCHING or action == Action.MOVE_PUNCHING or action == Action.JUMP_KICK then
+			local dYawToObject = Util.SignedShort(marioObjAngleToObject(m, o) - m.FaceAngle.Y)
 
 			if m.Flags:Has(MarioFlags.PUNCHING) then
 				-- 120 degrees total, or 60 each way
@@ -89,11 +172,11 @@ local function determineInteraction(m: Mario, point: Vector3): number
 					interaction = InteractionType.TRIP
 				end
 			end
-		elseif action() == Action.GROUND_POUND or action() == Action.TWIRLING then
+		elseif action == Action.GROUND_POUND or action == Action.TWIRLING then
 			if m.Velocity.Y < 0.0 then
 				interaction = InteractionType.GROUND_POUND_OR_TWIRL
 			end
-		elseif action() == Action.GROUND_POUND_LAND or action() == Action.TWIRL_LAND then
+		elseif action == Action.GROUND_POUND_LAND or action == Action.TWIRL_LAND then
 			-- Neither ground pounding nor twirling change Mario's vertical speed on landing,
 			-- so the speed check is nearly always true (perhaps not if you land while going upwards?)
 			-- Additionally, actionState it set on each first thing in their action, so this is
@@ -101,9 +184,9 @@ local function determineInteraction(m: Mario, point: Vector3): number
 			if m.Velocity.Y < 0.0 and m.ActionState == 0 then
 				interaction = InteractionType.GROUND_POUND_OR_TWIRL
 			end
-		elseif action() == Action.SLIDE_KICK or action() == Action.SLIDE_KICK_SLIDE then
+		elseif action == Action.SLIDE_KICK or action == Action.SLIDE_KICK_SLIDE then
 			interaction = InteractionType.SLIDE_KICK
-		elseif action:Has(ActionFlags.RIDING_SHELL) then
+		elseif m.Action:Has(ActionFlags.RIDING_SHELL) then
 			interaction = InteractionType.FAST_ATTACK_OR_SHELL
 		elseif m.ForwardVel < -26.0 and 26.0 <= m.ForwardVel then
 			interaction = InteractionType.FAST_ATTACK_OR_SHELL
@@ -113,13 +196,13 @@ local function determineInteraction(m: Mario, point: Vector3): number
 	-- Prior to this, the interaction type could be overwritten. This requires, however,
 	-- that the interaction not be set prior. This specifically overrides turning a ground
 	-- pound into just a bounce.
-	if interaction == 0 and action:Has(ActionFlags.AIR) then
+	if interaction == 0 and m.Action:Has(ActionFlags.AIR) then
 		if m.Velocity.Y < 0.0 then
-			if m.Position.Y > point.Y then
+			if m.Position.Y > o.Position.Y then
 				interaction = InteractionType.HIT_FROM_ABOVE
 			end
 		else
-			if m.Position.Y < point.Y then
+			if m.Position.Y < o.Position.Y then
 				interaction = InteractionType.HIT_FROM_BELOW
 			end
 		end
@@ -129,15 +212,15 @@ local function determineInteraction(m: Mario, point: Vector3): number
 end
 
 -- Vector3 point must be in SM64 Units.
-local function determineKnockbackAction(m: Mario, point: Vector3, oDamageOrCoinValue: number): number
-	local oDamageOrCoinValue = tonumber(oDamageOrCoinValue) or 0
+local function determineKnockbackAction(m: Mario, o: Object): number
+	local oDamageOrCoinValue = tonumber(o.DamageOrCoinValue) or 0
 
 	local bonkAction
 
 	local terrainIndex = 0 -- 1 = air, 2 = water, 0 = default
 	local strengthIndex = 0
 
-	local angleToObject = marioObjAngleToObject(m, point)
+	local angleToObject = marioObjAngleToObject(m, o)
 	local facingDYaw = Util.SignedShort(angleToObject - m.FaceAngle.Y)
 	local remainingHealth = Util.SignedShort(m.Health - 0x40 * m.HurtCounter)
 
@@ -180,8 +263,8 @@ local function determineKnockbackAction(m: Mario, point: Vector3, oDamageOrCoinV
 	return bonkAction
 end
 
-local function takeDamageFromInteractObject(m: Mario, damage: number)
-	local damage = math.floor(tonumber(damage) or 0)
+local function takeDamageFromInteractObject(m: Mario, o: Object): number
+	local damage = math.floor(tonumber(o.DamageOrCoinValue) or 0)
 
 	--[[local shake = 3
 	if damage >= 4 then
@@ -207,30 +290,28 @@ local function takeDamageFromInteractObject(m: Mario, damage: number)
 end
 
 -- Vector3 point must be in SM64 Units.
-local function takeDamageAndKnockback(m: Mario, point: Vector3, damage: number?)
-	local point = typeof(point) == "Vector3" and point or Vector3.zero
-	local damage = tonumber(damage) or 0
+local function takeDamageAndKnockback(m: Mario, o: Object): boolean
+	local damage = 0
 
 	local mInvulnerable = (m.InvincTimer > 0 or m.Action:Has(ActionFlags.INVULNERABLE))
 		or m.Flags:Has(MarioFlags.VANISH_CAP)
 
 	if not mInvulnerable then
-		damage = takeDamageFromInteractObject(m, damage)
+		damage = takeDamageFromInteractObject(m, o)
 
 		if damage > 0 then
 			m:PlaySound(Sounds.MARIO_ATTACKED)
 		end
 
-		return m:DropAndSetAction(determineKnockbackAction(m, point, damage), damage)
+		return m:DropAndSetAction(determineKnockbackAction(m, o), damage)
 	end
 
 	return false
 end
 
 -- Not sure how to do this function, so I'll stick with this way
-local function bounceOffObject(m: Mario, object: BasePart, velY: number)
-	local extents = Util.GetExtents(object)
-	m.Position = Util.SetY(m.Position, extents.Y / Util.Scale)
+local function bounceOffObject(m: Mario, o: Object, velY: number)
+	m.Position = Util.SetY(m.Position, o.Position.Y + o.HitboxHeight)
 	m.Velocity = Util.SetY(m.Velocity, velY)
 
 	m.Flags:Add(MarioFlags.MOVING_UP_IN_AIR)
@@ -238,13 +319,11 @@ local function bounceOffObject(m: Mario, object: BasePart, velY: number)
 end
 
 -- hmm............
-local function pushMarioOutOfObject(m: Mario, o: BasePart, padding: number?)
-	local oExtents = Util.GetExtents(o) / Util.Scale
-	local oPos = Util.ToSM64(o.Position)
-	local oSize = oExtents - oPos
-
+local function pushMarioOutOfObject(m: Mario, o: Object, padding: number?)
 	local padding = tonumber(padding) or 0
-	local hitboxRadius = math.max(oSize.X, oSize.Z)
+
+	local oPos = o.Position
+	local hitboxRadius = o.HitboxRadius
 	local minDistance = hitboxRadius + m.HitboxRadius + padding
 
 	local offsetX = m.Position.X - oPos.X
@@ -266,7 +345,7 @@ local function pushMarioOutOfObject(m: Mario, o: BasePart, padding: number?)
 		newMarioZ = oPos.Z + minDistance * Util.Coss(pushAngle)
 
 		local pos = Util.FindWallCollisions(Vector3.new(newMarioX, m.Position.Y, newMarioZ), 60.0, 50.0)
-		local floorHeight, floor = Util.FindFloor(pos)
+		local _floorHeight, floor = Util.FindFloor(pos)
 
 		if floor ~= nil then
 			--! Doesn't update Mario's referenced floor (allows oob death when
@@ -285,7 +364,7 @@ local function resetMarioPitch(m: Mario)
 end
 
 -- obsolete atm
-local function attackObject(o, interaction: number): number
+local function attackObject(o: Object, interaction: number): number
 	local attackType = 0
 
 	if interaction == InteractionType.GROUND_POUND_OR_TWIRL then
@@ -302,7 +381,11 @@ local function attackObject(o, interaction: number): number
 		attackType = AttackType.FROM_BELOW
 	end
 
-	-- o.InteractStatus:Set(attackType + bit32.bor(InteractionStatus.INTERACTED, InteractionStatus.WAS_ATTACKED))
+	local o = o :: any
+	if o.InteractStatus then
+		o.InteractStatus:Set(attackType + bit32.bor(InteractionStatus.INTERACTED, InteractionStatus.WAS_ATTACKED))
+	end
+
 	return attackType
 end
 
@@ -385,7 +468,7 @@ local function marioStopRidingAndHolding(m: Mario)
 	--end
 end
 
-function doesMarioHaveNormalCapOnHead(m: Mario): boolean
+local function doesMarioHaveNormalCapOnHead(m: Mario): boolean
 	return bit32.band(m.Flags(), bit32.bor(MarioFlags.CAPS, MarioFlags.CAP_ON_HEAD))
 		== bit32.bor(MarioFlags.NORMAL_CAP, MarioFlags.CAP_ON_HEAD)
 end
@@ -431,7 +514,7 @@ local function marioRetreiveCap(m: Mario)
 end
 
 -- obsolete atm
-local function ableToGrabObject(m: Mario): boolean
+local function ableToGrabObject(m: Mario, o: Object): boolean
 	local action = m.Action()
 
 	if action == Action.DIVE_SLIDE or action == Action.DIVE then
@@ -447,17 +530,15 @@ local function ableToGrabObject(m: Mario): boolean
 	return false
 end
 
--- obsolete atm
+-- Advanced objects only
 local function marioGetCollidedObject(m: Mario, interactType: number)
-	--[[
-	for i = 0, m.NumCollidedObjs, 1 do
-		local object = m.CollidedObjs[i]
+	local marioObj = (m :: any).MarioObj :: any
 
+	for _, object in marioObj.CollidedObjs do
 		if object.InteractType == interactType then
 			return object
 		end
 	end
-	]]
 
 	return nil
 end
@@ -542,7 +623,7 @@ end
 -- Mario Interactions
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-function Interaction.InteractFlame(m: Mario): boolean
+function Interaction.InteractFlame(m: Mario, o: Object): boolean
 	local burningAction = Action.BURNING_JUMP
 
 	if
@@ -551,6 +632,11 @@ function Interaction.InteractFlame(m: Mario): boolean
 		and not m.Action:Has(ActionFlags.INVULNERABLE)
 		and not m.Flags:Has(MarioFlags.METAL_CAP, MarioFlags.VANISH_CAP)
 	then
+		if (o :: any).InteractStatus then
+			(o :: any).InteractStatus = InteractionStatus.INTERACTED
+		end
+		-- m.InteractObj = o
+
 		if m.Action:Has(ActionFlags.SWIMMING, ActionFlags.METAL_WATER) and m.WaterLevel - m.Position.Y > 50.0 then
 			m:PlaySound(Sounds.GENERAL_FLAME_OUT)
 		else
@@ -569,8 +655,10 @@ function Interaction.InteractFlame(m: Mario): boolean
 end
 
 -- Vector3 point must be in SM64 Units.
-function Interaction.InteractDamage(m: Mario, point: Vector3, damage: number): boolean
-	if takeDamageAndKnockback(m, point, damage) then
+function Interaction.InteractDamage(m: Mario, o: Object): boolean
+	preparePseudoObject(o)
+
+	if takeDamageAndKnockback(m, o) then
 		return true
 	end
 
@@ -582,9 +670,11 @@ function Interaction.InteractDamage(m: Mario, point: Vector3, damage: number): b
 end
 
 -- Vector3 point must be in SM64 Units.
-function Interaction.InteractKoopaShell(m: Mario, point: Vector3, o: BasePart?): boolean
+function Interaction.InteractKoopaShell(m: Mario, o: Object): boolean
+	preparePseudoObject(o)
+
 	if not m.Action:Has(ActionFlags.RIDING_SHELL) then
-		local interaction = determineInteraction(m, point)
+		local interaction = determineInteraction(m, o)
 
 		if
 			interaction == InteractionType.HIT_FROM_ABOVE
@@ -595,7 +685,7 @@ function Interaction.InteractKoopaShell(m: Mario, point: Vector3, o: BasePart?):
 			-- m.UsedObj = o
 			-- m.RiddenObj = o
 
-			-- attackObject(o, interaction)
+			attackObject(o, interaction)
 			-- updateMarioSoundAndCamera(m)
 			-- playShellMusic()
 			-- marioDropHeldObject(m)
@@ -613,9 +703,16 @@ function Interaction.InteractKoopaShell(m: Mario, point: Vector3, o: BasePart?):
 	return false
 end
 
-function Interaction.InteractCap(m: Mario, capFlag: number): boolean
+function Interaction.InteractCap(m: Mario, o: Object | number): boolean
 	local capMusic = 0
 	local capTime = 0
+
+	preparePseudoObject(o :: any)
+
+	-- stylua: ignore
+	local capFlag: number = if typeof(o) == "table" then
+		(tonumber(o.CapFlag) or 0)
+	else (tonumber(o) or 0)
 
 	if m.Action() ~= Action.GETTING_BLOWN and table.find(acceptableCapFlags, capFlag) then
 		-- m.InteractObj = o
@@ -658,7 +755,9 @@ function Interaction.InteractCap(m: Mario, capFlag: number): boolean
 	return false
 end
 
-function Interaction.InteractStarOrKey(m: Mario): boolean
+function Interaction.InteractStarOrKey(m: Mario, o: Object): boolean
+	preparePseudoObject(o)
+
 	local starGrabAction = Action.STAR_DANCE_EXIT
 	local noExit = true -- (o->oInteractionSubtype & INT_SUBTYPE_NO_EXIT) != 0;
 	local grandStar = false -- (o->oInteractionSubtype & INT_SUBTYPE_GRAND_STAR) != 0;
@@ -712,32 +811,38 @@ function Interaction.InteractStarOrKey(m: Mario): boolean
 	return false
 end
 
-function Interaction.InteractBounceTop(m: Mario, part: BasePart, damage: number?, isTwirlBounce: boolean?): boolean
-	local oPos = Util.ToSM64(part.Position)
+function Interaction.InteractBounceTop(m: Mario, o: Object): boolean
+	preparePseudoObject(o)
+
 	local interaction = 0
 
 	if m.Flags:Has(MarioFlags.METAL_CAP) then
 		interaction = InteractionType.FAST_ATTACK_OR_SHELL
 	else
-		interaction = determineInteraction(m, oPos)
+		interaction = determineInteraction(m, o)
 	end
 
 	if bit32.btest(interaction, InteractionType.ATTACK_NOT_FROM_BELOW) then
-		attackObject(part, interaction)
+		attackObject(o, interaction)
 		bounceBackFromAttack(m, interaction)
 
 		if bit32.btest(interaction, InteractionType.HIT_FROM_ABOVE) then
+			local isTwirlBounce = (o :: any).TwirlBounce
+			if not isPseudoObject(o) and (o :: any).InteractionSubtype then
+				isTwirlBounce = (o :: any).InteractionSubtype:Has(InteractionSubtype.TWIRL_BOUNCE)
+			end
+
 			if isTwirlBounce then
-				bounceOffObject(m, part, 80.0)
+				bounceOffObject(m, o, 80.0)
 				resetMarioPitch(m)
 
 				m:PlaySound(Sounds.MARIO_TWIRL_BOUNCE)
 				return m:DropAndSetAction(Action.TWIRLING)
 			else
-				bounceOffObject(m, part, 30.0)
+				bounceOffObject(m, o, 30.0)
 			end
 		end
-	elseif takeDamageAndKnockback(m, oPos, damage) then
+	elseif takeDamageAndKnockback(m, o) then
 		return true
 	end
 
@@ -748,15 +853,15 @@ function Interaction.InteractBounceTop(m: Mario, part: BasePart, damage: number?
 	return false
 end
 
-function Interaction.InteractShock(m: Mario, point: Vector3, damage: number): boolean
-	local sInvulnerable = m.Action:Has(ActionFlags.INVULNERABLE) or m.InvincTimer ~= 0
+function Interaction.InteractShock(m: Mario, o: Object): boolean
+	preparePseudoObject(o)
 
 	if not sInvulnerable and not m.Flags:Has(MarioFlags.VANISH_CAP) then
 		local actionArg = m.Action:Has(ActionFlags.AIR, ActionFlags.ON_POLE, ActionFlags.HANGING) == false
 
 		-- m.InteractObj = o
 
-		takeDamageFromInteractObject(m, damage)
+		takeDamageFromInteractObject(m, o)
 		m:PlaySound(Sounds.MARIO_ATTACKED)
 
 		if m.Action:Has(ActionFlags.SWIMMING, ActionFlags.METAL_WATER) then
@@ -769,11 +874,10 @@ function Interaction.InteractShock(m: Mario, point: Vector3, damage: number): bo
 	return false
 end
 
-function Interaction.InteractPole(m: Mario, o: BasePart): boolean
-	local oExtents = Util.GetExtents(o) / Util.Scale
-	local oPos = Util.ToSM64(o.Position)
-	local oSize = oExtents - oPos
-	oPos -= Vector3.yAxis * oSize.Y
+function Interaction.InteractPole(m: Mario, o: Object): boolean
+	preparePseudoObject(o)
+
+	local oPos = o.Position
 
 	local actionId = bit32.band(m.Action(), 0x1FF)
 
@@ -784,7 +888,10 @@ function Interaction.InteractPole(m: Mario, o: BasePart): boolean
 
 			marioStopRidingAndHolding(m)
 			-- m.InteractObj = o
-			m.PoleObj = o
+
+			--! Still using BaseParts for poles.
+			--  Change to your own solution for SM64 objects if any
+			m.PoleObj = o.RbxPart
 			m.Velocity = Util.SetY(m.Velocity, 0)
 			m.ForwardVel = 0
 
@@ -808,7 +915,10 @@ function Interaction.InteractPole(m: Mario, o: BasePart): boolean
 	return false
 end
 
-function Interaction.InteractCoin(m: Mario, coinValue: number): boolean
+function Interaction.InteractCoin(m: Mario, o: Object): boolean
+	preparePseudoObject(o)
+	local coinValue = tonumber(o.DamageOrCoinValue) or 1
+
 	m.NumCoins += coinValue
 	m.HealCounter += 4 * coinValue
 
@@ -822,5 +932,86 @@ function Interaction.InteractCoin(m: Mario, coinValue: number): boolean
 
 	return false
 end
+
+function Interaction.InteractGrabbable(m: Mario, o: Object): boolean
+	-- TODO?
+	return false
+end
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Initialize
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+-- Outside redirect, if needed
+function Interaction.PreparePseudoObject(o: Object): Object
+	return preparePseudoObject(o)
+end
+
+function Interaction.ProcessMarioInteractions(m: Mario)
+	sDelayInvincTimer = false
+	sInvulnerable = (m.Action:Has(ActionFlags.INVULNERABLE) or m.InvincTimer ~= 0)
+
+	if m.InvincTimer > 0 and not sDelayInvincTimer then
+		m.InvincTimer -= 1
+	end
+
+	-- Advanced objects only
+	local marioObj = (m :: any).MarioObj :: any
+	if marioObj then
+		if not m.Action:Has(ActionFlags.INTANGIBLE) and marioObj.CollidedObjInteractTypes() ~= 0 then
+			for _, handler in Interaction.InteractionHandlers do
+				local interactType = handler[1]
+
+				if marioObj.CollidedObjInteractTypes:Has(interactType) then
+					local object = marioGetCollidedObject(m, interactType)
+
+					marioObj.CollidedObjInteractTypes:Remove(interactType)
+
+					if object and not object.InteractStatus:Has(InteractionStatus.INTERACTED) then
+						local intSuccess, intOut = pcall(function()
+							return handler[2](m, object, interactType)
+						end)
+
+						if intSuccess and intOut then
+							break
+						end
+					end
+				end
+			end
+		end
+	end
+
+	--! If the kick/punch flags are set and an object collision changes Mario's
+	--  action, he will get the kick/punch wall speed anyway.
+	m:CheckKickOrPunchWall()
+	m.Flags:Remove(MarioFlags.PUNCHING, MarioFlags.KICKING, MarioFlags.TRIPPING)
+
+	--[[
+	if marioObj then
+		if not marioObj.CollidedObjInteractTypes:Has(InteractionMethod.WARP_DOOR, InteractionMethod.DOOR) then
+			sDisplayingDoorText = false
+		end
+		if not marioObj.CollidedObjInteractTypes:Has(InteractionMethod.WARP) then
+			sJustTeleported = false
+		end
+	end
+	]]
+end
+
+type interactionHandler = { any }
+
+-- @interaction.c
+Interaction.InteractionHandlers = {
+	{ InteractionMethod.COIN, Interaction.InteractCoin },
+	{ InteractionMethod.FLAME, Interaction.InteractFlame },
+	{ InteractionMethod.SHOCK, Interaction.InteractShock },
+	{ InteractionMethod.BOUNCE_TOP, Interaction.InteractBounceTop },
+	{ InteractionMethod.BOUNCE_TOP2, Interaction.InteractBounceTop },
+	{ InteractionMethod.DAMAGE, Interaction.InteractDamage },
+	{ InteractionMethod.POLE, Interaction.InteractPole },
+	{ InteractionMethod.KOOPA_SHELL, Interaction.InteractKoopaShell },
+	{ InteractionMethod.GRABBABLE, Interaction.InteractGrabbable },
+	{ InteractionMethod.STAR_OR_KEY, Interaction.InteractStarOrKey },
+} :: { interactionHandler }
 
 return Interaction

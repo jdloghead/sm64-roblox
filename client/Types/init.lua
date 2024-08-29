@@ -153,6 +153,8 @@ export type ObjectState = {
 	ActiveFlags: Flags,
 	Flags: Flags,
 
+	MarkedForDeletion: boolean?,
+
 	-- Object data
 	HitboxRadius: number,
 	HitboxHeight: number,

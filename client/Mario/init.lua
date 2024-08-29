@@ -9,6 +9,8 @@ local Util = require(SM64.Util)
 local Enums = require(SM64.Enums)
 local Shared = require(Core.Shared)
 
+-- local Interaction = require(SM64.Game.Interaction)
+
 local Sounds = Shared.Sounds
 local Animations = Shared.Animations
 
@@ -1661,7 +1663,7 @@ local squishScaleOverTime = {
 	0x46, 0x32, 0x32, 0x3C,
 	0x46, 0x50, 0x50, 0x3C,
 	0x28, 0x14, 0x14, 0x1E,
-	0x32, 0x3C, 0x3C, 0x28 
+	0x32, 0x3C, 0x3C, 0x28
 }
 
 --[[
@@ -1699,7 +1701,7 @@ function Mario.CheckKickOrPunchWall(m: Mario)
 		)
 
 		local detector = m.Position + (range * 49.5)
-		local _disp, wall = Util.FindWallCollisions(detector, 80, 5)
+		local _, wall = Util.FindWallCollisions(detector, 80, 5)
 
 		if wall then
 			if m.Action() ~= Action.MOVE_PUNCHING or m.ForwardVel >= 0 then
@@ -1719,6 +1721,7 @@ function Mario.CheckKickOrPunchWall(m: Mario)
 	end
 end
 
+--[[
 function Mario.ProcessInteractions(m: Mario)
 	if m.InvincTimer > 0 then
 		m.InvincTimer -= 1
@@ -1729,6 +1732,7 @@ function Mario.ProcessInteractions(m: Mario)
 	m:CheckKickOrPunchWall()
 	m.Flags:Remove(MarioFlags.PUNCHING, MarioFlags.KICKING, MarioFlags.TRIPPING)
 end
+]]
 
 -- You have to reset/respawn Mario manually on your own.
 local function checkDeathBarrier(m: Mario)
@@ -1906,6 +1910,30 @@ function Mario.UpdateQuicksand(m: Mario, SinkingSpeed)
 	return false
 end
 
+--[[
+	* Copy position, velocity, and angle variables from MarioState to the Mario
+	* object.
+]]
+function Mario.CopyMarioStateToObject(m: Mario, o: any)
+	o.Velocity = m.Velocity
+	o.Position = m.Position
+
+	o.MoveAnglePitch = m.GfxAngle.X
+	o.MoveAngleYaw = m.GfxAngle.Y
+	o.MoveAngleRoll = m.GfxAngle.Z
+
+	o.FaceAnglePitch = m.GfxAngle.X
+	o.FaceAngleYaw = m.GfxAngle.Y
+	o.FaceAngleRoll = m.GfxAngle.Z
+
+	o.AngleVelPitch = m.AngleVel.X
+	o.AngleVelYaw = m.AngleVel.Y
+	o.AngleVelRoll = m.AngleVel.Z
+
+	o.HitboxHeight = m.HitboxHeight
+	o.HitboxRadius = m.HitboxRadius
+end
+
 function Mario.ExecuteAction(m: Mario): number
 	if m.Action() == 0 then
 		return 0
@@ -1928,7 +1956,11 @@ function Mario.ExecuteAction(m: Mario): number
 	m:UpdateInputs()
 
 	m:HandleSpecialFloors()
-	m:ProcessInteractions()
+
+	do -- Temp
+		local m = m :: any
+		m:ProcessInteractions()
+	end
 
 	if m.Floor == nil then
 		return 0
@@ -2133,7 +2165,7 @@ function Mario.new(): Mario
 		PrevAction = Flags.new(),
 		ParticleFlags = Flags.new(),
 		HitboxHeight = 100,
-		HitboxRadius = 50,
+		HitboxRadius = 37,
 		TerrainType = 0,
 
 		ActionState = 0,
