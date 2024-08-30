@@ -19,6 +19,7 @@ local Sounds = Mario.Sounds
 
 local Action = Enums.Action
 local ActionFlags = Enums.ActionFlags
+local InputFlags = Enums.InputFlags
 
 local MarioFlags = Enums.MarioFlags
 local ParticleFlags = Enums.ParticleFlags
@@ -294,10 +295,12 @@ end
 local function takeDamageAndKnockback(m: Mario, o: Object): boolean
 	local damage = 0
 
+	local delayInvinc = (o :: any).InteractionSubtype
+		and (o :: any).InteractionSubtype:Has(InteractionSubtype.DELAY_INVINCIBILITY)
 	local mInvulnerable = (m.InvincTimer > 0 or m.Action:Has(ActionFlags.INVULNERABLE))
 		or m.Flags:Has(MarioFlags.VANISH_CAP)
 
-	if not mInvulnerable then
+	if not (mInvulnerable or delayInvinc) then
 		damage = takeDamageFromInteractObject(m, o)
 
 		if damage > 0 then
@@ -399,48 +402,45 @@ local function marioStopRidingObject(m: Mario)
 end
 
 -- obsolete atm
-local function marioGrabUsedObject(m: Mario)
-	--[[
+local function marioGrabUsedObject(m: any)
 	if m.HeldObj == nil then
 		m.HeldObj = m.UsedObj
-		objSetHeldState(m.HeldObj, bhvCarrySomething3)
+		-- objSetHeldState(m.HeldObj, bhvCarrySomething3)
 	end
-	]]
 end
 
 -- obsolete atm
-local function marioDropHeldObject(m: Mario)
-	--[[
-	if m.HeldObj ~= nil then
-		if m.HeldObj.Behavior == "KoopaShellUnderwater" then
-			stopShellMusic()
-		end
+local function marioDropHeldObject(m: any)
+	local heldObj = m.HeldObj
 
-		objSetHeldState(m.HeldObj, bhvCarrySomething4)
+	if heldObj ~= nil then
+		--if m.HeldObj.Behavior == "KoopaShellUnderwater" then
+		--	stopShellMusic()
+		--end
+
+		heldObj:SetHeldState("bhvCarrySomething4")
 
 		-- ! When dropping an object instead of throwing it, it will be put at Mario's
-        -- y-positon instead of the HOLP's y-position. This fact is often exploited when
-        -- cloning objects.
+		--  y-positon instead of the HOLP's y-position. This fact is often exploited when
+		--  cloning objects.
 
 		local holp = m.BodyState.HeldObjLastPos
-		m.HeldObj.Position = Vector3.new(holp.X, m.Position.Y, holp.Z)
+		heldObj.Position = Vector3.new(holp.X, m.Position.Y, holp.Z)
 
-		m.HeldObj.MoveAngleYaw = m.FaceAngle.Y
+		heldObj.MoveAngleYaw = m.FaceAngle.Y
 
 		m.HeldObj = nil
 	end
-	]]
 end
 
 -- obsolete atm
-local function marioThrowHeldObject(m: Mario)
-	--[[
+local function marioThrowHeldObject(m: any)
 	if m.HeldObj ~= nil then
 		if m.HeldObj.Behavior == "KoopaShellUnderwater" then
-			stopShellMusic()
+			-- stopShellMusic()
 		end
 
-		objSetHeldState(m.HeldObj, bhvCarrySomething5)
+		-- objSetHeldState(m.HeldObj, bhvCarrySomething5)
 
 		local holp = m.BodyState.HeldObjLastPos
 		m.HeldObj.Position = Vector3.new(
@@ -453,17 +453,6 @@ local function marioThrowHeldObject(m: Mario)
 
 		m.HeldObj = nil
 	end
-	]]
-end
-
-local function marioStopRidingAndHolding(m: Mario)
-	marioDropHeldObject(m)
-	marioStopRidingObject(m)
-
-	--if m.Action() == Action.RIDING_HOOT then
-	--	 m.UsedObj.InteractStatus = false
-	--	 m.UsedObj.HootMarioReleaseTime = Util.GlobalTimer
-	--end
 end
 
 local function doesMarioHaveNormalCapOnHead(m: Mario): boolean
@@ -516,9 +505,9 @@ local function ableToGrabObject(m: Mario, o: Object): boolean
 	local action = m.Action()
 
 	if action == Action.DIVE_SLIDE or action == Action.DIVE then
-		--if not o.InteractionSubtype:Has(IntSubtype.GRABS_MARIO) then
-		--	return true
-		--end
+		if not (o :: any).InteractionSubtype:Has(InteractionSubtype.GRABS_MARIO) then
+			return true
+		end
 	elseif action == Action.PUNCHING or action == Action.MOVE_PUNCHING then
 		if m.ActionArg < 2 then
 			return true
@@ -544,17 +533,17 @@ end
 -- obsolete atm
 local function marioCheckObjectGrab(m: Mario)
 	local result = false
+	local interactObj = (m :: any).InteractObj
 
-	--[[
-	if m.Input:Has(InputFlags.INTERACT_OBJ_GRABBABLE) and m.InteractObj then
-		local Script = m.InteractObj.Behavior
+	if m.Input:Has(InputFlags.INTERACT_OBJ_GRABBABLE) and interactObj then
+		local Script = interactObj.Behavior
 
 		if Script == "Bowser" then
-
+			--
 		else
-			local facingDYaw = Util.SignedShort(marioObjAngleToObject(m, m.InteractObj) - m.FaceAngle.Y)
+			local facingDYaw = Util.SignedShort(marioObjAngleToObject(m, interactObj) - m.FaceAngle.Y)
 			if facingDYaw >= -0x2AAA and facingDYaw <= 0x2AAA then
-				m.UsedObj = m.InteractObj
+				(m :: any).UsedObj = interactObj
 
 				if not m.Action:Has(ActionFlags.AIR) then
 					m:SetAction(m.Action:Has(ActionFlags.DIVING) and Action.DIVE_PICKING_UP or Action.PICKING_UP)
@@ -564,7 +553,6 @@ local function marioCheckObjectGrab(m: Mario)
 			end
 		end
 	end
-	]]
 
 	return result
 end
@@ -662,9 +650,9 @@ function Interaction.InteractDamage(m: Mario, o: Object): boolean
 		return true
 	end
 
-	--if (!(o->oInteractionSubtype & INT_SUBTYPE_DELAY_INVINCIBILITY)) {
-	--    sDelayInvincTimer = TRUE;
-	--}
+	if (o :: any).InteractionSubtype and (o :: any).InteractionSubtype:Has(InteractionSubtype.DELAY_INVINCIBILITY) then
+		sDelayInvincTimer = true
+	end
 
 	return false
 end
@@ -688,7 +676,7 @@ function Interaction.InteractKoopaShell(m: Mario, o: Object): boolean
 			attackObject(o, interaction)
 			-- updateMarioSoundAndCamera(m)
 			-- playShellMusic()
-			-- marioDropHeldObject(m)
+			Interaction.MarioDropHeldObject(m)
 
 			--! Puts Mario in ground action even when in air, making it easy to
 			-- escape air actions into crouch slide (shell cancel)
@@ -716,7 +704,9 @@ function Interaction.InteractCap(m: Mario, o: Object | number): boolean
 
 	if m.Action() ~= Action.GETTING_BLOWN and table.find(acceptableCapFlags, capFlag) then
 		-- m.InteractObj = o
-		-- o.oInteractStatus = INT_STATUS_INTERACTED
+		if (o :: any).InteractStatus then
+			(o :: any).InteractStatus = InteractionStatus.INTERACTED
+		end
 
 		m.Flags:Remove(MarioFlags.CAP_ON_HEAD, MarioFlags.CAP_IN_HAND)
 		m.Flags:Add(capFlag)
@@ -763,7 +753,7 @@ function Interaction.InteractStarOrKey(m: Mario, o: Object): boolean
 	local grandStar = false -- (o->oInteractionSubtype & INT_SUBTYPE_GRAND_STAR) != 0;
 
 	if m.Health >= 0x100 then
-		marioStopRidingAndHolding(m)
+		Interaction.MarioStopRidingAndHolding(m)
 
 		if not noExit then
 			m.HurtCounter = 0
@@ -785,7 +775,10 @@ function Interaction.InteractStarOrKey(m: Mario, o: Object): boolean
 			starGrabAction = Action.FALL_AFTER_STAR_GRAB
 		end
 
-		-- o.InteractStatus = IntStatus.INTERACTED
+		if (o :: any).InteractStatus then
+			(o :: any).InteractStatus = InteractionStatus.INTERACTED
+		end
+
 		-- m.InteractObj = o
 		-- m.UsedObj = o
 
@@ -846,9 +839,9 @@ function Interaction.InteractBounceTop(m: Mario, o: Object): boolean
 		return true
 	end
 
-	--if (!(o->oInteractionSubtype & INT_SUBTYPE_DELAY_INVINCIBILITY)) {
-	--    sDelayInvincTimer = TRUE;
-	--}
+	if (o :: any).InteractionSubtype and (o :: any).InteractionSubtype:Has(InteractionSubtype.DELAY_INVINCIBILITY) then
+		sDelayInvincTimer = true
+	end
 
 	return false
 end
@@ -887,7 +880,7 @@ function Interaction.InteractPole(m: Mario, o: Object): boolean
 			local velConv = m.ForwardVel
 			local lowSpeed = m.ForwardVel <= 10.0
 
-			marioStopRidingAndHolding(m)
+			Interaction.MarioStopRidingAndHolding(m)
 			-- m.InteractObj = o
 
 			--! Still using BaseParts for poles.
@@ -924,7 +917,7 @@ function Interaction.InteractCoin(m: Mario, o: Object): boolean
 	m.HealCounter += 4 * coinValue
 
 	if o and (o :: any).InteractStatus then
-		o.InteractStatus = InteractionStatus.INTERACTED
+		(o :: any).InteractStatus = InteractionStatus.INTERACTED
 	end
 
 	--[[
@@ -977,6 +970,8 @@ function Interaction.ProcessMarioInteractions(m: Mario)
 
 						if intSuccess and intOut then
 							break
+						elseif not intSuccess then
+							warn(`Failed executing interaction because {intOut}`, debug.traceback())
 						end
 					end
 				end
@@ -1001,7 +996,23 @@ function Interaction.ProcessMarioInteractions(m: Mario)
 	]]
 end
 
-type interactionHandler = { any }
+function Interaction.MarioStopRidingAndHolding(m: Mario)
+	marioDropHeldObject(m)
+	marioStopRidingObject(m)
+
+	--if m.Action() == Action.RIDING_HOOT then
+	--	 m.UsedObj.InteractStatus = false
+	--	 m.UsedObj.HootMarioReleaseTime = Util.GlobalTimer
+	--end
+end
+
+function Interaction.MarioDropHeldObject(m: Mario)
+	return marioDropHeldObject(m)
+end
+
+function Interaction.MaropThrowHeldObject(m: Mario)
+	return marioThrowHeldObject(m)
+end
 
 -- @interaction.c
 Interaction.InteractionHandlers = {
@@ -1015,6 +1026,6 @@ Interaction.InteractionHandlers = {
 	{ InteractionMethod.KOOPA_SHELL, Interaction.InteractKoopaShell },
 	{ InteractionMethod.GRABBABLE, Interaction.InteractGrabbable },
 	{ InteractionMethod.STAR_OR_KEY, Interaction.InteractStarOrKey },
-} :: { interactionHandler }
+} :: { { any } }
 
 return Interaction

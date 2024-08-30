@@ -13,6 +13,9 @@ local ActionFlags = Enums.ActionFlags
 local SurfaceClass = Enums.SurfaceClass
 local ParticleFlags = Enums.ParticleFlags
 
+local InteractionStatus = Enums.Interaction.Status
+local InteractionMethod = Enums.Interaction.Method
+
 local MarioFlags = Enums.MarioFlags
 local MarioEyes = Enums.MarioEyes
 
@@ -247,7 +250,7 @@ end
 
 local function updateSwimmingPitch(m: Mario)
 	local targetPitch = -Util.SignedShort(252 * m.Controller.StickY)
-	
+
 	-- stylua: ignore
 	local pitchVel = if m.FaceAngle.X < 0
 		then 0x100
@@ -475,6 +478,32 @@ local function commonWaterKnockbackStep(m: Mario, animation: Animation, endActio
 		m:SetAction(m.Health >= 0x100 and endAction or Action.WATER_DEATH, 0)
 	end
 end
+
+local function checkWaterGrab(m: Mario)
+	--! Heave hos have the grabbable interaction type but are not normally
+	-- grabbable. Since water grabbing doesn't check the appropriate input flag,
+	-- you can use water grab to pick up heave ho.
+	local marioObj = (m :: any).MarioObj
+
+	if marioObj and marioObj.CollidedObjInteractTypes:Has(InteractionMethod.GRABBABLE) then
+		local object = m:GetCollidedObject(InteractionMethod.GRABBABLE)
+
+		if object then
+			local dx = object.Position.X - m.Position.X
+			local dz = object.Position.Z - m.Position.Z
+			local dAngleToObject = Util.SignedShort(Util.Atan2s(dz, dx) - m.FaceAmgle.Y)
+
+			if math.abs(dAngleToObject) >= 0x2AAA then
+				(m :: any).UsedObj = object
+				m:GrabUsedObject()
+				m.BodyState.GrabPos = 0x01
+			end
+		end
+	end
+
+	return false
+end
+
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 local DEF_ACTION: (number, (Mario) -> boolean) -> () = System.RegisterAction
@@ -502,6 +531,29 @@ DEF_ACTION(Action.WATER_IDLE, function(m: Mario)
 	return false
 end)
 
+DEF_ACTION(Action.HOLD_WATER_IDLE, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+
+	if m.Flags:Has(MarioFlags.METAL_CAP) then
+		return m:SetAction(Action.HOLD_METAL_WATER_FALLING)
+	end
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.WATER_IDLE)
+	end
+
+	if m.Input:Has(InputFlags.B_PRESSED) then
+		return m:SetAction(Action.WATER_THROW)
+	end
+
+	if m.Input:Has(InputFlags.A_PRESSED) then
+		return m:SetAction(Action.HOLD_BREASTSTROKE)
+	end
+
+	commonIdleStep(m, Animations.WATER_IDLE_WITH_OBJ)
+	return false
+end)
+
 DEF_ACTION(Action.WATER_ACTION_END, function(m: Mario)
 	if m.Flags:Has(MarioFlags.METAL_CAP) then
 		return m:SetAction(Action.METAL_WATER_FALLING, 1)
@@ -519,6 +571,34 @@ DEF_ACTION(Action.WATER_ACTION_END, function(m: Mario)
 
 	if m:IsAnimAtEnd() then
 		m:SetAction(Action.WATER_IDLE)
+	end
+
+	return false
+end)
+
+DEF_ACTION(Action.HOLD_WATER_ACTION_END, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+
+	if m.Flags:Has(MarioFlags.METAL_CAP) then
+		return m:SetAction(Action.HOLD_METAL_WATER_FALLING)
+	end
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.WATER_IDLE)
+	end
+
+	if m.Input:Has(InputFlags.B_PRESSED) then
+		return m:SetAction(Action.WATER_THROW)
+	end
+
+	if m.Input:Has(InputFlags.A_PRESSED) then
+		return m:SetAction(Action.HOLD_BREASTSTROKE)
+	end
+
+	commonIdleStep(m, m.ActionArg == 0 and Animations.WATER_ACTION_END_WITH_OBJ or Animations.STOP_GRAB_OBJ_WATER)
+
+	if m:IsAnimAtEnd() then
+		m:SetAction(Action.HOLD_WATER_IDLE)
 	end
 
 	return false
@@ -579,6 +659,62 @@ DEF_ACTION(Action.BREASTSTROKE, function(m: Mario)
 	return false
 end)
 
+DEF_ACTION(Action.HOLD_BREASTSTROKE, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+
+	if m.Flags:Has(MarioFlags.METAL_CAP) then
+		return m:SetAction(Action.HOLD_METAL_WATER_FALLING)
+	end
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.WATER_IDLE)
+	end
+
+	m.ActionTimer += 1
+
+	if m.ActionTimer == 17 then
+		return m:SetAction(Action.HOLD_FLUTTER_KICK)
+	end
+
+	if m.Input:Has(InputFlags.B_PRESSED) then
+		return m:SetAction(Action.WATER_THROW)
+	end
+
+	if checkWaterJump(m) then
+		return true
+	end
+
+	if m.ActionTimer < 6 then
+		m.ForwardVel += 0.5
+	end
+
+	if m.ActionTimer >= 9 then
+		m.ForwardVel += 1.5
+	end
+
+	if m.ActionTimer >= 2 then
+		if m.ActionTimer < 6 and m.Input:Has(InputFlags.A_PRESSED) then
+			m.ActionState = 1
+		end
+
+		if m.ActionTimer == 9 and m.ActionState == 1 then
+			m:SetAnimToFrame(0)
+			m.ActionState = 0
+			m.ActionTimer = 1
+			sSwimStrength = MIN_SWIM_STRENGTH
+		end
+	end
+
+	if m.ActionTimer == 1 then
+		m:PlaySound(sSwimStrength == MIN_SWIM_STRENGTH and Sounds.ACTION_SWIM or Sounds.ACTION_SWIM_FAST)
+		resetBobVariables(m)
+	end
+
+	m:SetAnimation(Animations.SWIM_WITH_OBJ_PART1)
+	commonSwimmingStep(m, 0x00A0)
+	return false
+end)
+
 DEF_ACTION(Action.SWIMMING_END, function(m: Mario)
 	if m.Flags:Has(MarioFlags.METAL_CAP) then
 		return m:SetAction(Action.METAL_WATER_FALLING, 1)
@@ -617,6 +753,45 @@ DEF_ACTION(Action.SWIMMING_END, function(m: Mario)
 	return false
 end)
 
+DEF_ACTION(Action.HOLD_SWIMMING_END, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+
+	if m.Flags:Has(MarioFlags.METAL_CAP) then
+		return m:SetAction(Action.HOLD_METAL_WATER_FALLING)
+	end
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.WATER_IDLE)
+	end
+
+	if m.Input:Has(InputFlags.B_PRESSED) then
+		return m:SetAction(Action.WATER_THROW)
+	end
+
+	if checkWaterJump(m) then
+		return true
+	end
+
+	if m.Input:Has(InputFlags.A_DOWN) and m.ActionTimer >= 7 then
+		if m.ActionTimer == 7 and sSwimStrength < 280 then
+			sSwimStrength += 10
+		end
+
+		return m:SetAction(Action.BREASTSTROKE, 1)
+	end
+
+	if m.Input:Has(InputFlags.A_DOWN) and m.ActionTimer >= 7 then
+		return m:SetAction(Action.HOLD_BREASTSTROKE)
+	end
+
+	m.ActionTimer += 1
+	m.ForwardVel -= 0.25
+
+	m:SetAnimation(Animations.SWIM_WITH_OBJ_PART2)
+	commonSwimmingStep(m, 0x00A0)
+	return false
+end)
+
 DEF_ACTION(Action.FLUTTER_KICK, function(m: Mario)
 	if m.Flags:Has(MarioFlags.METAL_CAP) then
 		return m:SetAction(Action.METAL_WATER_FALLING, 1)
@@ -647,6 +822,65 @@ DEF_ACTION(Action.FLUTTER_KICK, function(m: Mario)
 	return false
 end)
 
+DEF_ACTION(Action.HOLD_FLUTTER_KICK, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+
+	if m.Flags:Has(MarioFlags.METAL_CAP) then
+		return m:SetAction(Action.HOLD_METAL_WATER_FALLING)
+	end
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.WATER_IDLE)
+	end
+
+	if m.Input:Has(InputFlags.B_PRESSED) then
+		return m:SetAction(Action.WATER_THROW)
+	end
+
+	if not m.Input:Has(InputFlags.A_DOWN) then
+		return m:SetAction(Action.HOLD_SWIMMING_END)
+	end
+
+	m.ForwardVel = Util.ApproachFloat(m.ForwardVel, 12, 0.1, 0.15)
+	if m.ForwardVel < 14 then
+		playSwimmingNoise(m)
+		m:SetAnimation(Animations.FLUTTERKICK_WITH_OBJ)
+	end
+
+	commonSwimmingStep(m, 0x00A0)
+	return false
+end)
+
+DEF_ACTION(Action.WATER_SHELL_SWIMMING, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+	local heldObj = assert((m :: any).MarioObj)
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.WATER_IDLE)
+	end
+
+	if m.Input:Has(InputFlags.B_PRESSED) then
+		return m:SetAction(Action.WATER_THROW)
+	end
+
+	m.ActionTimer += 1
+
+	if m.ActionTimer == 240 then
+		(m :: any).HeldObj.InteractStatus = InteractionStatus.STOP_RIDING;
+		(m :: any).HeldObj = nil
+		-- stop_shell_music()
+		m:SetAction(Action.FLUTTER_KICK)
+	end
+
+	m.ForwardVel = Util.ApproachFloat(m.ForwardVel, 30.0, 2.0, 1.0)
+
+	playSwimmingNoise(m)
+	m:SetAnimation(Animations.FLUTTERKICK_WITH_OBJ)
+	commonSwimmingStep(m, 0x012C)
+
+	return false
+end)
+
 DEF_ACTION(Action.WATER_PUNCH, function(m: Mario)
 	if m.ForwardVel < 7 then
 		m.ForwardVel += 1
@@ -668,7 +902,7 @@ DEF_ACTION(Action.WATER_PUNCH, function(m: Mario)
 		m:SetAnimation(Animations.WATER_GRAB_OBJ_PART1)
 
 		if m:IsAnimAtEnd() then
-			m.ActionState = 1
+			m.ActionState = (checkWaterGrab(m) and 1 or 0) + 1
 		end
 	elseif m.ActionState == 1 then
 		m:SetAnimation(Animations.WATER_GRAB_OBJ_PART2)
@@ -676,6 +910,40 @@ DEF_ACTION(Action.WATER_PUNCH, function(m: Mario)
 		if m:IsAnimAtEnd() then
 			m:SetAction(Action.WATER_ACTION_END)
 		end
+	elseif m.ActionState == 2 then
+		m:SetAnimation(Animations.WATER_PICK_UP_OBJ)
+		local heldObj = (m :: any).HeldObj
+		if m:IsAnimAtEnd() and heldObj then
+			if heldObj.Behavior == "bhvKoopaShellUnderwater" then
+				m:SetAction(Action.WATER_SHELL_SWIMMING)
+			else
+				m:SetAction(Action.HOLD_WATER_ACTION_END)
+			end
+		end
+	end
+
+	return false
+end)
+
+DEF_ACTION(Action.WATER_THROW, function(m: Mario)
+	updateSwimmingYaw(m)
+	updateSwimmingPitch(m)
+	updateSwimmingSpeed(m, MIN_SWIM_SPEED)
+	performWaterStep(m)
+	updateWaterPitch(m)
+
+	m:SetAnimToFrame(Animations.WATER_THROW_OBJ)
+	m:PlaySoundIfNoFlag(Sounds.ACTION_SWIM, MarioFlags.ACTION_SOUND_PLAYED)
+
+	m.BodyState.HeadAngle = Util.SetX(m.BodyState.HeadAngle, Util.ApproachFloat(m.BodyState.HeadAngle.X, 0, 0x200))
+	m.ActionTimer += 1
+
+	if m.ActionTimer == 5 then
+		m:ThrowHeldObject()
+	end
+
+	if m:IsAnimAtEnd() then
+		m:SetAction(Action.WATER_IDLE)
 	end
 
 	return false
@@ -683,19 +951,28 @@ end)
 
 DEF_ACTION(Action.WATER_PLUNGE, function(m: Mario)
 	local stepResult
+	local stateFlags = ((m :: any).HeldObj ~= nil) and 1 or 0
 	local endVSpeed = swimmingNearSurface(m) and 0 or -5
 
-	local hasMetalCap = m.Flags:Has(MarioFlags.METAL_CAP)
-	local isDiving = m.PrevAction:Has(ActionFlags.DIVING) or m.Input:Has(InputFlags.A_DOWN)
+	if swimmingNearSurface(m) then
+		endVSpeed = 0
+	else
+		endVSpeed = -5.0
+	end
+
+	if m.Flags:Has(MarioFlags.METAL_CAP) then
+		stateFlags = bit32.bor(stateFlags, 4)
+	elseif m.PrevAction:Has(ActionFlags.DIVING) or m.Input:Has(InputFlags.A_DOWN) then
+		stateFlags = bit32.bor(stateFlags, 2)
+	end
 
 	m.ActionTimer += 1
 	stationarySlowDown(m)
 	stepResult = performWaterStep(m)
 
 	if m.ActionState == 0 then
-		m:PlaySound(Sounds.ACTION_WATER_ENTER)
-
-		if m.PeakHeight - m.Position.Y > 1150 then
+		m:PlaySound(Sounds.ACTION_UNKNOWN430)
+		if m.PeakHeight - m.Position.Y > 1150.0 then
 			m:PlaySound(Sounds.MARIO_HAHA)
 		end
 
@@ -704,26 +981,38 @@ DEF_ACTION(Action.WATER_PLUNGE, function(m: Mario)
 	end
 
 	if stepResult == WaterStep.HIT_FLOOR or m.Velocity.Y >= endVSpeed or m.ActionTimer > 20 then
-		if hasMetalCap then
-			m:SetAction(Action.METAL_WATER_FALLING)
-		elseif isDiving then
-			m:SetAction(Action.FLUTTER_KICK)
-		else
+		if stateFlags == 0 then
 			m:SetAction(Action.WATER_ACTION_END)
+		elseif stateFlags == 1 then
+			m:SetAction(Action.HOLD_WATER_ACTION_END)
+		elseif stateFlags == 2 then
+			m:SetAction(Action.FLUTTER_KICK)
+		elseif stateFlags == 3 then
+			m:SetAction(Action.HOLD_FLUTTER_KICK)
+		elseif stateFlags == 4 then
+			m:SetAction(Action.METAL_WATER_FALLING)
+		elseif stateFlags == 5 then
+			m:SetAction(Action.HOLD_METAL_WATER_FALLING)
 		end
 
 		sBobIncrement = 0
 	end
 
-	if hasMetalCap then
-		m:SetAnimation(Animations.GENERAL_FALL)
-	elseif isDiving then
-		m:SetAnimation(Animations.FLUTTERKICK)
-	else
+	if stateFlags == 0 then
 		m:SetAnimation(Animations.WATER_ACTION_END)
+	elseif stateFlags == 1 then
+		m:SetAnimation(Animations.WATER_ACTION_END_WITH_OBJ)
+	elseif stateFlags == 2 then
+		m:SetAnimation(Animations.FLUTTERKICK)
+	elseif stateFlags == 3 then
+		m:SetAnimation(Animations.FLUTTERKICK_WITH_OBJ)
+	elseif stateFlags == 4 then
+		m:SetAnimation(Animations.GENERAL_FALL)
+	elseif stateFlags == 5 then
+		m:SetAnimation(Animations.FALL_WITH_LIGHT_OBJ)
 	end
 
-	m.Flags:Add(ParticleFlags.PLUNGE_BUBBLE)
+	m.ParticleFlags:Add(ParticleFlags.PLUNGE_BUBBLE)
 	return false
 end)
 
@@ -765,6 +1054,30 @@ DEF_ACTION(Action.METAL_WATER_STANDING, function(m: Mario)
 	return false
 end)
 
+DEF_ACTION(Action.HOLD_METAL_WATER_STANDING, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.METAL_WATER_STANDING)
+	end
+
+	if not m.Flags:Has(MarioFlags.METAL_CAP) then
+		return m:SetAction(Action.HOLD_WATER_IDLE)
+	end
+
+	if m.Input:Has(InputFlags.A_PRESSED) then
+		return m:SetAction(Action.HOLD_METAL_WATER_JUMP)
+	end
+
+	if m.Input:Has(InputFlags.NONZERO_ANALOG) then
+		return m:SetAction(Action.HOLD_METAL_WATER_WALKING)
+	end
+
+	m:StopAndSetHeightToFloor()
+	m:SetAnimation(Animations.IDLE_WITH_LIGHT_OBJ)
+	return false
+end)
+
 DEF_ACTION(Action.METAL_WATER_WALKING, function(m: Mario)
 	if not m.Flags:Has(MarioFlags.METAL_CAP) then
 		return m:SetAction(Action.WATER_IDLE)
@@ -803,6 +1116,52 @@ DEF_ACTION(Action.METAL_WATER_WALKING, function(m: Mario)
 	return false
 end)
 
+DEF_ACTION(Action.HOLD_METAL_WATER_WALKING, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.METAL_WATER_WALKING)
+	end
+
+	if not m.Flags:Has(MarioFlags.METAL_CAP) then
+		return m:SetAction(Action.HOLD_WATER_IDLE)
+	end
+
+	if m.Input:Has(InputFlags.FIRST_PERSON) then
+		return m:SetAction(Action.HOLD_METAL_WATER_STANDING)
+	end
+
+	if m.Input:Has(InputFlags.A_PRESSED) then
+		return m:SetAction(Action.HOLD_METAL_WATER_JUMP)
+	end
+
+	if m.Input:Has(InputFlags.NO_MOVEMENT) then
+		return m:SetAction(Action.HOLD_METAL_WATER_STANDING)
+	end
+
+	m.IntendedMag *= 0.4
+
+	local accel = Util.SignedInt(m.ForwardVel / 4 * 0x10000)
+	local groundStep
+
+	if accel < 0x1000 then
+		accel = 0x1000
+	end
+
+	m:SetAnimationWithAccel(Animations.RUN_WITH_LIGHT_OBJ, accel)
+	playMetalWaterWalkingSound(m)
+	updateMetalWaterWalkingSpeed(m)
+	groundStep = m:PerformGroundStep()
+
+	if groundStep == GroundStep.LEFT_GROUND then
+		m:SetAction(Action.HOLD_METAL_WATER_FALLING, 1)
+	elseif groundStep == GroundStep.HIT_WALL then
+		m.ForwardVel = 0
+	end
+
+	return false
+end)
+
 DEF_ACTION(Action.METAL_WATER_JUMP, function(m: Mario)
 	local airStep
 
@@ -820,6 +1179,35 @@ DEF_ACTION(Action.METAL_WATER_JUMP, function(m: Mario)
 
 	if airStep == AirStep.LANDED then
 		m:SetAction(Action.METAL_WATER_JUMP_LAND)
+	elseif airStep == AirStep.HIT_WALL then
+		m.ForwardVel = 0
+	end
+
+	return false
+end)
+
+DEF_ACTION(Action.HOLD_METAL_WATER_JUMP, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+	local airStep
+
+	if not m.Flags:Has(MarioFlags.METAL_CAP) then
+		return m:SetAction(Action.WATER_IDLE)
+	end
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.METAL_WATER_FALLING)
+	end
+
+	if updateMetalWaterJumpSpeed(m) then
+		return m:SetAction(Action.HOLD_WATER_JUMP, 1)
+	end
+
+	playMetalWaterJumpingSound(m, false)
+	m:SetAnimation(Animations.JUMP_WITH_LIGHT_OBJ)
+	airStep = m:PerformAirStep()
+
+	if airStep == AirStep.LANDED then
+		m:SetAction(Action.HOLD_METAL_WATER_JUMP_LAND)
 	elseif airStep == AirStep.HIT_WALL then
 		m.ForwardVel = 0
 	end
@@ -846,6 +1234,31 @@ DEF_ACTION(Action.METAL_WATER_FALLING, function(m: Mario)
 	return false
 end)
 
+DEF_ACTION(Action.HOLD_METAL_WATER_FALLING, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action._METAL_WATER_FALLING)
+	end
+
+	if not m.Flags:Has(MarioFlags.METAL_CAP) then
+		return m:SetAction(Action.HOLD_WATER_IDLE)
+	end
+
+	if m.Input:Has(InputFlags.NONZERO_ANALOG) then
+		m.FaceAngle += Vector3int16.new(0, 0x400 * Util.Sins(m.IntendedYaw - m.FaceAngle.Y), 0)
+	end
+
+	m:SetAnimation(Animations.FALL_WITH_LIGHT_OBJ)
+	stationarySlowDown(m)
+
+	if bit32.btest(performWaterStep(m), WaterStep.HIT_FLOOR) then
+		m:SetAction(Action.HOLD_METAL_WATER_FALL_LAND)
+	end
+
+	return false
+end)
+
 DEF_ACTION(Action.METAL_WATER_JUMP_LAND, function(m: Mario)
 	playMetalWaterJumpingSound(m, true)
 
@@ -867,6 +1280,28 @@ DEF_ACTION(Action.METAL_WATER_JUMP_LAND, function(m: Mario)
 	return false
 end)
 
+DEF_ACTION(Action.HOLD_METAL_WATER_JUMP_LAND, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+	playMetalWaterJumpingSound(m, true)
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.HOLD_WATER_IDLE)
+	end
+
+	if m.Input:Has(InputFlags.NONZERO_ANALOG) then
+		return m:SetAction(Action.HOLD_METAL_WATER_WALKING)
+	end
+
+	m:StopAndSetHeightToFloor()
+	m:SetAnimation(Animations.FALL_LAND_WITH_LIGHT_OBJ)
+
+	if m:IsAnimAtEnd() then
+		return m:SetAction(Action.HOLD_METAL_WATER_STANDING)
+	end
+
+	return false
+end)
+
 DEF_ACTION(Action.METAL_WATER_FALL_LAND, function(m: Mario)
 	playMetalWaterJumpingSound(m, true)
 
@@ -883,6 +1318,32 @@ DEF_ACTION(Action.METAL_WATER_FALL_LAND, function(m: Mario)
 
 	if m:IsAnimAtEnd() then
 		return m:SetAction(Action.METAL_WATER_STANDING)
+	end
+
+	return false
+end)
+
+DEF_ACTION(Action.HOLD_METAL_WATER_FALL_LAND, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+	playMetalWaterJumpingSound(m, true)
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.METAL_WATER_STANDING)
+	end
+
+	if not m.Flags:Has(MarioFlags.METAL_CAP) then
+		return m:SetAction(Action.HOLD_WATER_IDLE)
+	end
+
+	if m.Input:Has(InputFlags.NONZERO_ANALOG) then
+		return m:SetAction(Action.METAL_WATER_WALKING)
+	end
+
+	m:StopAndSetHeightToFloor()
+	m:SetAnimation(Animations.FALL_LAND_WITH_LIGHT_OBJ)
+
+	if m:IsAnimAtEnd() then
+		return m:SetAction(Action.HOLD_METAL_WATER_STANDING)
 	end
 
 	return false

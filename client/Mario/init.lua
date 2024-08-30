@@ -120,7 +120,7 @@ local function solveContinuousClip(m: Mario, nextPos: Vector3, heightOff: number
 			maybeNextPos = Util.SetY(nextClip.Position + push, nextPos.Y)
 
 			-- safe floor push, otherwise mario'd get propulsed upwards/downwards in
-			-- a weird way since the origin vector is higher than m.Position
+			-- a weird way since the ray origin vector is higher than m.Position
 			if (not ignoreFloor) and normalY >= 0.01 then
 				maybeNextPos = Util.SetY(maybeNextPos, nextPos.Y + 5)
 			elseif (not ignoreCeil) and normalY <= -0.01 then
@@ -787,9 +787,25 @@ function Mario.SetAction(m: Mario, action: number, maybeActionArg: number?): boo
 	return true
 end
 
--- placeholder
 function Mario.DropAndSetAction(m: Mario, action: number, actionArg: number?): boolean
+	-- Placeholder until replaced
 	return m:SetAction(action, actionArg)
+end
+
+function Mario.DropHeldObject(m: Mario)
+	-- Placeholder until replaced
+end
+
+function Mario.GetCollidedObject(m: Mario)
+	-- Placeholder until replaced
+end
+
+function Mario.ThrowHeldObject(m: Mario)
+	-- Placeholder until replaced
+end
+
+function Mario.GrabUsedObject(m: Mario)
+	-- Placeholder until replaced
 end
 
 function Mario.SetJumpFromLanding(m: Mario)
@@ -857,6 +873,26 @@ function Mario.CheckCommonActionExits(m: Mario)
 
 	if m.Input:Has(InputFlags.ABOVE_SLIDE) then
 		return m:SetAction(Action.BEGIN_SLIDING)
+	end
+
+	return false
+end
+
+function Mario.CheckCommonHoldActionExits(m: Mario)
+	if m.Input:Has(InputFlags.A_PRESSED) then
+		return m:SetAction(Action.HOLD_JUMP)
+	end
+
+	if m.Input:Has(InputFlags.OFF_FLOOR) then
+		return m:SetAction(Action.HOLD_FREEFALL)
+	end
+
+	if m.Input:Has(InputFlags.NONZERO_ANALOG) then
+		return m:SetAction(Action.HOLD_WALKING)
+	end
+
+	if m.Input:Has(InputFlags.ABOVE_SLIDE) then
+		return m:SetAction(Action.HOLD_BEGIN_SLIDING)
 	end
 
 	return false
@@ -2126,15 +2162,14 @@ function Mario.ExecuteAction(m: Mario): number
 							end
 						end
 
+						if m:UpdateQuicksand(0.5) then
+							return true
+						end
+
 						return nil
 					end
 
 					cancel = commonMovingCancels()
-					if not cancel then
-						if m:UpdateQuicksand(0.25) then
-							cancel = true
-						end
-					end
 				elseif group == ActionGroups.STATIONARY then
 					local function commonStationaryCancels(): boolean?
 						if m.Input:Has(InputFlags.SQUISHED) then
@@ -2147,24 +2182,26 @@ function Mario.ExecuteAction(m: Mario): number
 							end
 						end
 
+						if m:UpdateQuicksand(0.5) then
+							return true
+						end
+
 						return nil
 					end
 
 					cancel = commonStationaryCancels()
-					if not cancel then
-						if m:UpdateQuicksand(0.5) then
-							cancel = true
-						end
-					end
 				elseif group == ActionGroups.CUTSCENE then
 					local function checkForInstantQuicksand(): any
 						local floorType = m:GetFloorType()
 						if
-							floorType == SurfaceClass.INSTANT_QUICKSAND
+							(
+								floorType == SurfaceClass.INSTANT_QUICKSAND
+								or floorType == SurfaceClass.INSTANT_MOVING_QUICKSAND
+							)
 							and m.Action:Has(ActionFlags.INVULNERABLE)
 							and m.Action() ~= Action.QUICKSAND_DEATH
 						then
-							return m:SetAction(Action.QUICKSAND_DEATH, 0)
+							return m:DropAndSetAction(Action.QUICKSAND_DEATH, 0)
 						end
 
 						return false
@@ -2173,6 +2210,24 @@ function Mario.ExecuteAction(m: Mario): number
 					if checkForInstantQuicksand() then
 						cancel = true
 					end
+				elseif group == ActionGroups.OBJECT then
+					local function checkCommonObjectCancels()
+						if m.Input:Has(InputFlags.SQUISHED) then
+							return m:DropAndSetAction(Action.SQUISHED, 0)
+						end
+
+						if m.Health < 0x100 then
+							return m:DropAndSetAction(Action.STANDING_DEATH, 0)
+						end
+
+						if m:UpdateQuicksand(0.5) then
+							return true
+						end
+
+						return nil
+					end
+
+					cancel = checkCommonObjectCancels()
 				end
 
 				if cancel == nil then

@@ -273,12 +273,33 @@ bindInput(Buttons.L_JPAD, nil, Enum.KeyCode.H, Enum.KeyCode.DPadLeft)
 bindInput(Buttons.R_JPAD, nil, Enum.KeyCode.K, Enum.KeyCode.DPadRight)
 bindInput(Buttons.D_JPAD, nil, Enum.KeyCode.J, Enum.KeyCode.DPadDown)
 
--- ?
-if type(Interaction.ProcessMarioInteractions) == "function" then
+-- Too lazy to make a require lazy loader
+do
 	local Mario = Mario :: any
 
-	function Mario.ProcessInteractions(m: Mario)
-		return Interaction.ProcessMarioInteractions(m)
+	if type(Interaction.ProcessMarioInteractions) == "function" then
+		function Mario.ProcessInteractions(m: Mario)
+			return Interaction.ProcessMarioInteractions(m)
+		end
+	end
+
+	if type(Interaction.MarioStopRidingAndHolding) == "function" then
+		function Mario.DropAndSetAction(m: Mario, action: number, actionArg: number?): boolean
+			Interaction.MarioStopRidingAndHolding(m)
+			return m:SetAction(action, actionArg)
+		end
+	end
+
+	if type(Interaction.MarioDropHeldObject) == "function" then
+		function Mario.DropHeldObject(m: Mario)
+			return Interaction.MarioDropHeldObject(m)
+		end
+	end
+
+	if type(Interaction.MarioThrowHeldObject) == "function" then
+		function Mario.ThrowHeldObject(m: Mario)
+			return Interaction.MaropThrowHeldObject(m)
+		end
 	end
 end
 

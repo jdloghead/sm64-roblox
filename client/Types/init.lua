@@ -27,17 +27,22 @@ export type Controller = {
 
 export type BodyState = {
 	Action: number,
+
 	CapState: Flags,
 	EyeState: number,
 	HandState: Flags,
+
 	WingFlutter: boolean,
 	ModelState: Flags,
+
+	HeldObjLastPos: Vector3,
 	GrabPos: number,
+
 	PunchType: number,
 	PunchTimer: number,
+
 	TorsoAngle: Vector3int16,
 	HeadAngle: Vector3int16,
-	HeldObjLastPos: Vector3,
 }
 
 export type MarioState = {
@@ -136,7 +141,7 @@ export type MarioState = {
 
 export type ObjectState = {
 	-- Roblox helpers
-	RbxConnections: { RBXScriptConnection | thread }?,
+	RbxConnections: { RBXScriptConnection | thread | Instance },
 	RbxInstance: Instance?,
 	OctreeNonstatic: boolean?,
 

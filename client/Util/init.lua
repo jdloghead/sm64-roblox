@@ -315,7 +315,7 @@ function Util.Raycast(pos: Vector3, dir: Vector3, maybeParams: RaycastParams?, w
 		local line = Instance.new("LineHandleAdornment")
 		line.Length = length
 		line.CFrame = CFrame.new(pos, pos + dir)
-		line.Thickness = 6
+		line.Thickness = 3
 		line.Color3 = color
 		line.Adornee = workspace.Terrain
 		line.Parent = workspace.Terrain

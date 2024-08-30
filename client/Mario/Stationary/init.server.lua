@@ -12,6 +12,9 @@ local InputFlags = Enums.InputFlags
 local MarioFlags = Enums.MarioFlags
 local ParticleFlags = Enums.ParticleFlags
 
+local InteractionSubtype = Enums.Interaction.Subtype
+local InteractionStatus = Enums.Interaction.Status
+
 type Mario = System.Mario
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -28,7 +31,7 @@ local function checkCommonIdleCancels(m: Mario)
 	end
 
 	if m.Input:Has(InputFlags.STOMPED) then
-		return m:SetAction(Action.SHOCKWAVE_BOUNCE)
+		return m:DropAndSetAction(Action.SHOCKWAVE_BOUNCE)
 	end
 
 	if m.Input:Has(InputFlags.A_PRESSED) then
@@ -57,7 +60,48 @@ local function checkCommonIdleCancels(m: Mario)
 	end
 
 	if m.Input:Has(InputFlags.Z_DOWN) then
-		return m:SetAction(Action.START_CROUCHING)
+		return m:DropAndSetAction(Action.START_CROUCHING)
+	end
+
+	return false
+end
+
+local function checkCommonHoldIdleCancels(m: Mario)
+	local marioObj = (m :: any).MarioObj
+	local floor = m.Floor
+
+	if floor and m.Floor.Normal.Y < 0.29237169 then
+		return m:PushOffSteepFloor(Action.HOLD_FREEFALL)
+	end
+
+	if marioObj and marioObj.InteractionSubtype:Has(InteractionSubtype.DROP_IMMEDIATELY) then
+		marioObj.InteractionSubtype:Remove(InteractionSubtype.DROP_IMMEDIATELY)
+		return m:DropAndSetAction(Action.PLACING_DOWN)
+	end
+
+	if m.Input:Has(InputFlags.STOMPED) then
+		return m:DropAndSetAction(Action.SHOCKWAVE_BOUNCE)
+	end
+
+	if m.Input:Has(InputFlags.A_PRESSED) then
+		return m:SetJumpingAction(Action.HOLD_JUMP)
+	end
+
+	if m.Input:Has(InputFlags.OFF_FLOOR) then
+		return m:SetAction(Action.HOLD_FREEFALL)
+	end
+
+	if m.Input:Has(InputFlags.NONZERO_ANALOG) then
+		m.FaceAngle = Util.SetY(m.FaceAngle, m.IntendedYaw)
+		return m:SetAction(Action.HOLD_WALKING)
+	end
+
+	if m.Input:Has(InputFlags.B_PRESSED) then
+		return m:SetAction(Action.THROWING)
+	end
+
+	if m.Input:Has(InputFlags.Z_DOWN) then
+		return m:DropAndSetAction(Action.START_CROUCHING)
 	end
 
 	return false
@@ -109,15 +153,6 @@ local function checkCommonLandingCancels(m: Mario, action: number)
 	end
 
 	return false
-end
-
-local function animatedStationaryGroundStep(m: Mario, anim: Animation, endAction: number)
-	m:StationaryGroundStep()
-	m:SetAnimation(anim)
-
-	if m:IsAnimAtEnd() then
-		m:SetAction(endAction)
-	end
 end
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -494,6 +529,29 @@ DEF_ACTION(Action.BUTT_SLIDE_STOP, function(m: Mario)
 	return false
 end)
 
+DEF_ACTION(Action.HOLD_BUTT_SLIDE_STOP, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.IDLE)
+	end
+
+	if m.Input:Has(InputFlags.STOMPED) then
+		return m:SetAction(Action.SHOCKWAVE_BOUNCE)
+	end
+
+	if m.Input:Has(InputFlags.NONZERO_ANALOG, InputFlags.A_PRESSED, InputFlags.OFF_FLOOR, InputFlags.ABOVE_SLIDE) then
+		return m:CheckCommonHoldActionExits()
+	end
+
+	if m.Input:Has(InputFlags.B_PRESSED) then
+		return m:SetAction(Action.THROWING)
+	end
+
+	stoppingStep(m, Animations.STAND_UP_FROM_SLIDING_WITH_LIGHT_OBJ, Action.HOLD_IDLE)
+	return false
+end)
+
 DEF_ACTION(Action.SLIDE_KICK_SLIDE_STOP, function(m: Mario)
 	if m.Input:Has(InputFlags.STOMPED) then
 		return m:SetAction(Action.SHOCKWAVE_BOUNCE)
@@ -633,6 +691,28 @@ DEF_ACTION(Action.JUMP_LAND_STOP, function(m: Mario)
 	return false
 end)
 
+DEF_ACTION(Action.HOLD_JUMP_LAND_STOP, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.JUMP_LAND_STOP)
+	end
+
+	if m.Input:Has(InputFlags.STOMPED) then
+		return m:SetAction(Action.SHOCKWAVE_BOUNCE)
+	end
+
+	if m.Input:Has(InputFlags.NONZERO_ANALOG, InputFlags.A_PRESSED, InputFlags.OFF_FLOOR, InputFlags.ABOVE_SLIDE) then
+		return m:CheckCommonHoldActionExits()
+	end
+
+	if m.Input:Has(InputFlags.B_PRESSED) then
+		return m:SetAction(Action.THROWING)
+	end
+
+	landingStep(m, Animations.JUMP_LAND_WITH_LIGHT_OBJ, Action.HOLD_IDLE)
+	return false
+end)
+
 DEF_ACTION(Action.DOUBLE_JUMP_LAND_STOP, function(m: Mario)
 	if checkCommonLandingCancels(m, 0) then
 		return true
@@ -659,6 +739,48 @@ DEF_ACTION(Action.FREEFALL_LAND_STOP, function(m: Mario)
 	end
 
 	landingStep(m, Animations.GENERAL_LAND, Action.IDLE)
+	return false
+end)
+
+DEF_ACTION(Action.HOLD_FREEFALL_LAND_STOP, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.IDLE)
+	end
+
+	if m.Input:Has(InputFlags.STOMPED) then
+		return m:SetAction(Action.SHOCKWAVE_BOUNCE)
+	end
+
+	if m.Input:Has(InputFlags.NONZERO_ANALOG, InputFlags.A_PRESSED, InputFlags.OFF_FLOOR, InputFlags.ABOVE_SLIDE) then
+		return m:CheckCommonHoldActionExits()
+	end
+
+	if m.Input:Has(InputFlags.B_PRESSED) then
+		return m:SetAction(Action.THROWING)
+	end
+
+	landingStep(m, Animations.FALL_LAND_WITH_LIGHT_OBJ, Action.HOLD_IDLE)
+	return false
+end)
+
+DEF_ACTION(Action.AIR_THROW_LAND, function(m: Mario)
+	if m.Input:Has(InputFlags.STOMPED) then
+		return m:SetAction(Action.SHOCKWAVE_BOUNCE)
+	end
+
+	if m.Input:Has(InputFlags.OFF_FLOOR) then
+		return m:SetAction(Action.FREEFALL)
+	end
+
+	m.ActionTimer += 1
+
+	if m.ActionTimer == 4 then
+		m:ThrowHeldObject()
+	end
+
+	landingStep(m, Animations.THROW_LIGHT_OBJECT, Action.IDLE)
 	return false
 end)
 
@@ -786,20 +908,54 @@ DEF_ACTION(Action.COUGHING, function(m: Mario)
 	return false
 end)
 
-DEF_ACTION(Action.STOMACH_SLIDE_STOP, function(m: Mario)
+DEF_ACTION(Action.HOLD_IDLE, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+	local heldObj = (m :: any).HeldObj
+
+	if heldObj and heldObj.Behavior == "bhvJumpingBox" then
+		return m:SetAction(Action.CRAZY_BOX_BOUNCE)
+	end
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.IDLE)
+	end
+
+	if m.QuicksandDepth > 30.0 then
+		return m:DropAndSetAction(Action.IN_QUICKSAND)
+	end
+
+	if checkCommonHoldIdleCancels(m) then
+		return true
+	end
+
+	m:StationaryGroundStep()
+	m:SetAnimation(Animations.IDLE_WITH_LIGHT_OBJ)
+	return false
+end)
+
+DEF_ACTION(Action.HOLD_HEAVY_IDLE, function(m: Mario)
 	if m.Input:Has(InputFlags.STOMPED) then
-		return m:SetAction(Action.SHOCKWAVE_BOUNCE)
+		return m:DropAndSetAction(Action.SHOCKWAVE_BOUNCE)
 	end
 
 	if m.Input:Has(InputFlags.OFF_FLOOR) then
-		return m:SetAction(Action.FREEFALL)
+		return m:DropAndSetAction(Action.FREEFALL)
 	end
 
 	if m.Input:Has(InputFlags.ABOVE_SLIDE) then
-		return m:SetAction(Action.BEGIN_SLIDING)
+		return m:DropAndSetAction(Action.BEGIN_SLIDING)
 	end
 
-	animatedStationaryGroundStep(m, Animations.SLOW_LAND_FROM_DIVE, Action.IDLE)
+	if m.Input:Has(InputFlags.NONZERO_ANALOG) then
+		return m:DropAndSetAction(Action.HOLD_HEAVY_WALKING)
+	end
+
+	if m.Input:Has(InputFlags.B_PRESSED) then
+		return m:DropAndSetAction(Action.HEAVY_THROW)
+	end
+
+	m:StationaryGroundStep()
+	m:SetAnimation(Animations.IDLE_HEAVY_OBJ)
 	return false
 end)
 

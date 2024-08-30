@@ -25,6 +25,7 @@ local Enums = {
 
 	Object = table.freeze({
 		Flag = require(script.Object.Flag),
+		List = require(script.Object.List),
 		Action = require(script.Object.Action),
 		MoveFlag = require(script.Object.MoveFlag),
 		HeldState = require(script.Object.HeldState),

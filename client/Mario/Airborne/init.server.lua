@@ -15,6 +15,9 @@ local InputFlags = Enums.InputFlags
 local MarioFlags = Enums.MarioFlags
 local ParticleFlags = Enums.ParticleFlags
 
+local InteractionStatus = Enums.Interaction.Status
+local InteractionSubtype = Enums.Interaction.Subtype
+
 type Mario = System.Mario
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -62,7 +65,7 @@ local function lavaBoostOnWall(m: Mario)
 	end
 
 	m:PlaySound(Sounds.MARIO_ON_FIRE)
-	m:SetAction(Action.LAVA_BOOST, 1)
+	m:DropAndSetAction(Action.LAVA_BOOST, 1)
 end
 
 local function checkFallDamage(m: Mario, hardFallAction: number): boolean
@@ -344,6 +347,15 @@ local function commonAirActionStep(m: Mario, landAction: number, anim: Animation
 			else
 				stopRising(m)
 
+				--! Hands-free holding. Bonking while no wall is referenced
+				-- sets Mario's action to a non-holding action without
+				-- dropping the object, causing the hands-free holding
+				-- glitch. This can be achieved using an exposed ceiling,
+				-- out of bounds, grazing the bottom of a wall while
+				-- falling such that the final quarter step does not find a
+				-- wall collision, or by rising into the top of a wall such
+				-- that the final quarter step detects a ledge, but you are
+				-- not able to ledge grab it.
 				if m.ForwardVel >= 38 then
 					m.ParticleFlags:Add(ParticleFlags.VERTICAL_STAR)
 					m:SetAction(Action.BACKWARD_AIR_KB)
@@ -360,9 +372,9 @@ local function commonAirActionStep(m: Mario, landAction: number, anim: Animation
 		end
 	elseif stepResult == AirStep.GRABBED_LEDGE then
 		m:SetAnimation(Animations.IDLE_ON_LEDGE)
-		m:SetAction(Action.LEDGE_GRAB)
+		m:DropAndSetAction(Action.LEDGE_GRAB)
 	elseif stepResult == AirStep.GRABBED_CEILING then
-		m:SetAction(Action.START_HANGING)
+		m:DropAndSetAction(Action.START_HANGING)
 	elseif stepResult == AirStep.HIT_LAVA_WALL then
 		lavaBoostOnWall(m)
 	end
@@ -479,6 +491,31 @@ DEF_ACTION(Action.JUMP, function(m: Mario)
 	return false
 end)
 
+DEF_ACTION(Action.HOLD_JUMP, function(m: Mario)
+	local heldObj = (m :: any).HeldObj
+	local marioObj = (m :: any).MarioObj
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.FREEFALL)
+	end
+
+	if
+		m.Input:Has(InputFlags.B_PRESSED)
+		and not (heldObj and heldObj.InteractionSubtype:Has(InteractionSubtype.HOLDABLE_NPC))
+	then
+		return m:SetAction(Action.AIR_THROW)
+	end
+
+	if m.Input:Has(InputFlags.Z_PRESSED) then
+		return m:DropAndSetAction(Action.GROUND_POUND)
+	end
+
+	m:PlayMarioSound(Sounds.ACTION_TERRAIN_JUMP)
+	commonAirActionStep(m, Action.HOLD_JUMP_LAND, Animations.JUMP_WITH_LIGHT_OBJ, AIR_STEP_CHECK_BOTH)
+
+	return false
+end)
+
 DEF_ACTION(Action.DOUBLE_JUMP, function(m: Mario)
 	local anim = if m.Velocity.Y >= 0 then Animations.DOUBLE_JUMP_RISE else Animations.DOUBLE_JUMP_FALL
 
@@ -544,6 +581,33 @@ DEF_ACTION(Action.FREEFALL, function(m: Mario)
 	end
 
 	commonAirActionStep(m, Action.FREEFALL_LAND, anim, AirStep.CHECK_LEDGE_GRAB)
+	return false
+end)
+
+DEF_ACTION(Action.HOLD_FREEFALL, function(m: Mario)
+	local heldObj = (m :: any).HeldObj
+	local marioObj = (m :: any).MarioObj
+
+	local anim = if m.ActionArg == 0
+		then Animations.FALL_WITH_LIGHT_OBJ
+		else Animations.FALL_FROM_SLIDING_WITH_LIGHT_OBJ
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.FREEFALL)
+	end
+
+	if
+		m.Input:Has(InputFlags.B_PRESSED)
+		and not (heldObj and heldObj.InteractionSubtype:Has(InteractionSubtype.HOLDABLE_NPC))
+	then
+		return m:DropAndSetAction(Action.AIR_THROW)
+	end
+
+	if m.Input:Has(InputFlags.Z_PRESSED) then
+		return m:DropAndSetAction(Action.GROUND_POUND)
+	end
+
+	commonAirActionStep(m, Action.HOLD_FREEFALL_LAND, anim, AirStep.CHECK_LEDGE_GRAB)
 	return false
 end)
 
@@ -701,6 +765,31 @@ DEF_ACTION(Action.DIVE, function(m: Mario)
 	return false
 end)
 
+DEF_ACTION(Action.AIR_THROW, function(m: Mario)
+	m.ActionTimer += 1
+
+	if m.ActionTimer == 4 then
+		m:ThrowHeldObject()
+	end
+
+	m:PlaySoundIfNoFlag(Sounds.MARIO_WAH2, MarioFlags.MARIO_SOUND_PLAYED)
+	m:SetAnimation(Animations.THROW_LIGHT_OBJECT)
+	updateAirWithoutTurn(m)
+
+	local stepResult = m:PerformAirStep()
+	if stepResult == AirStep.LANDED then
+		if not checkFallDamageOrGetStuck(m, Action.HARD_BACKWARD_GROUND_KB) then
+			m.Action:Set(Action.AIR_THROW_LAND)
+		end
+	elseif stepResult == AirStep.HIT_WALL then
+		m:SetForwardVel(0)
+	elseif stepResult == AirStep.HIT_LAVA_WALL then
+		lavaBoostOnWall(m)
+	end
+
+	return false
+end)
+
 DEF_ACTION(Action.WATER_JUMP, function(m: Mario)
 	if m.ForwardVel < 15 then
 		m:SetForwardVel(15)
@@ -718,6 +807,33 @@ DEF_ACTION(Action.WATER_JUMP, function(m: Mario)
 	elseif step == AirStep.GRABBED_LEDGE then
 		m:SetAnimation(Animations.IDLE_ON_LEDGE)
 		m:SetAction(Action.LEDGE_GRAB)
+	elseif step == AirStep.HIT_LAVA_WALL then
+		lavaBoostOnWall(m)
+	end
+
+	return false
+end)
+
+DEF_ACTION(Action.HOLD_WATER_JUMP, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.FREEFALL)
+	end
+
+	if m.ForwardVel < 15 then
+		m:SetForwardVel(15)
+	end
+
+	m:PlaySound(Sounds.ACTION_WATER_EXIT)
+	m:SetAnimation(Animations.JUMP_WITH_LIGHT_OBJ)
+
+	local step = m:PerformAirStep(AirStep.CHECK_LEDGE_GRAB)
+
+	if step == AirStep.LANDED then
+		m:SetAction(Action.HOLD_JUMP_LAND)
+	elseif step == AirStep.HIT_WALL then
+		m:SetForwardVel(15)
 	elseif step == AirStep.HIT_LAVA_WALL then
 		lavaBoostOnWall(m)
 	end
@@ -1044,6 +1160,50 @@ DEF_ACTION(Action.BUTT_SLIDE_AIR, function(m: Mario)
 	end
 
 	m:SetAnimation(Animations.SLIDE)
+	return false
+end)
+
+DEF_ACTION(Action.HOLD_BUTT_SLIDE_AIR, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+	local stepResult
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.FREEFALL)
+	end
+
+	m.ActionTimer += 1
+
+	if m.ActionTimer > 30 and m.Position.Y - m.FloorHeight > 500 then
+		return m:SetAction(Action.HOLD_FREEFALL, 1)
+	end
+
+	updateAirWithTurn(m)
+	stepResult = m:PerformAirStep()
+
+	if stepResult == AirStep.LANDED then
+		if m.ActionState == 0 and m.Velocity.Y < 0 then
+			local floor = m.Floor
+
+			if floor and floor.Normal.Y > 0.9848077 then
+				m.Velocity *= Vector3.new(1, -0.5, 1)
+				m.ActionState = 1
+			else
+				m:SetAction(Action.HOLD_BUTT_SLIDE)
+			end
+		else
+			m:SetAction(Action.HOLD_BUTT_SLIDE)
+		end
+
+		m:PlayLandingSound()
+	elseif stepResult == AirStep.HIT_WALL then
+		stopRising(m)
+		m.ParticleFlags:Add(ParticleFlags.VERTICAL_STAR)
+		m:SetAction(Action.BACKWARD_AIR_KB)
+	elseif stepResult == AirStep.HIT_LAVA_WALL then
+		lavaBoostOnWall(m)
+	end
+
+	m:SetAnimation(Animations.SLIDING_ON_BOTTOM_WITH_LIGHT_OBJ)
 	return false
 end)
 

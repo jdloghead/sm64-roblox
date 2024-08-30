@@ -7,8 +7,6 @@ local Enums = System.Enums
 local Util = System.Util
 
 local Action = Enums.Action
-local ActionFlags = Enums.ActionFlags
-local ActionGroup = Enums.ActionGroups
 
 local MarioEyes = Enums.MarioEyes
 local GroundStep = Enums.GroundStep
@@ -16,6 +14,8 @@ local InputFlags = Enums.InputFlags
 local MarioFlags = Enums.MarioFlags
 local SurfaceClass = Enums.SurfaceClass
 local ParticleFlags = Enums.ParticleFlags
+
+local InteractionStatus = Enums.Interaction.Status
 
 type Mario = System.Mario
 
@@ -26,8 +26,13 @@ type Mario = System.Mario
 type LandingAction = {
 	NumFrames: number,
 	JumpTimer: number,
+
 	EndAction: number,
+	AirAction: number?,
+	SlideAction: number?,
 	APressedAction: number,
+	OffFloorAction: number?,
+	VerySteepAction: number?,
 }
 
 local sJumpLandAction: LandingAction = {
@@ -38,12 +43,30 @@ local sJumpLandAction: LandingAction = {
 	APressedAction = Action.DOUBLE_JUMP,
 }
 
+local sHoldJumpLandAction: LandingAction = {
+	NumFrames = 4,
+	JumpTimer = 5,
+
+	EndAction = Action.HOLD_JUMP_LAND_STOP,
+	APressedAction = Action.HOLD_JUMP,
+	AirAction = Action.HOLD_FREEFALL,
+	SlideAction = Action.HOLD_BEGIN_SLIDING,
+}
+
 local sFreefallLandAction: LandingAction = {
 	NumFrames = 4,
 	JumpTimer = 5,
 
 	EndAction = Action.FREEFALL_LAND_STOP,
 	APressedAction = Action.DOUBLE_JUMP,
+}
+
+local sHoldFreefallLandAction: LandingAction = {
+	NumFrames = 4,
+	JumpTimer = 5,
+
+	EndAction = Action.HOLD_FREEFALL_LAND_STOP,
+	APressedAction = Action.HOLD_JUMP,
 }
 
 local sSideFlipLandAction: LandingAction = {
@@ -91,7 +114,6 @@ local sBackflipLandAction: LandingAction = {
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 local DEF_ACTION: (number, (Mario) -> boolean) -> () = System.RegisterAction
-local sPunchingForwardVelocities = { 0, 1, 1, 2, 3, 5, 7, 10 }
 
 local function tiltBodyRunning(m: Mario)
 	local pitch = m:FindFloorSlope(0)
@@ -196,7 +218,7 @@ end
 local function slideBonk(m: Mario, fastAction: number, slowAction: number)
 	if m.ForwardVel > 16 then
 		m:BonkReflection(true)
-		m:SetAction(fastAction)
+		m:DropAndSetAction(fastAction)
 	else
 		m:SetForwardVel(0)
 		m:SetAction(slowAction)
@@ -640,6 +662,49 @@ local function animAndAudioForWalk(m: Mario)
 	m.GfxAngle = Util.SetX(m.GfxAngle, walkingPitch)
 end
 
+local function animAndAudioForHoldWalk(m: Mario)
+	local baseAccel = if m.IntendedMag > m.ForwardVel then m.IntendedMag else m.ForwardVel
+
+	if baseAccel < 2 then
+		baseAccel = 2
+	end
+
+	while true do
+		if m.ActionTimer == 0 then
+			if baseAccel > 6.0 then
+				m.ActionTimer = 1
+			else
+				m:SetAnimationWithAccel(Animations.SLOW_WALK_WITH_LIGHT_OBJ, baseAccel * 0x10000)
+				playStepSound(m, 12, 62)
+				break
+			end
+		elseif m.ActionTimer == 1 then
+			if baseAccel < 3.0 then
+				m.ActionTimer = 0
+			elseif baseAccel > 11.0 then
+				m.ActionTimer = 2
+			else
+				m:SetAnimationWithAccel(Animations.WALK_WITH_LIGHT_OBJ, baseAccel * 0x10000)
+				playStepSound(m, 12, 62)
+				break
+			end
+		elseif m.ActionTimer == 2 then
+			if baseAccel < 8.0 then
+				m.ActionTimer = 1
+			else
+				m:SetAnimationWithAccel(Animations.WALK_WITH_LIGHT_OBJ, baseAccel / 2.0 * 0x10000)
+				playStepSound(m, 12, 62)
+				break
+			end
+		end
+	end
+end
+
+local function animAndAudioForHeavyWalk(m: Mario)
+	m:SetAnimationWithAccel(Animations.WALK_WITH_HEAVY_OBJ, m.IntendedMag * 0x10000)
+	playStepSound(m, 26, 79)
+end
+
 local function pushOrSidleWall(m: Mario, startPos: Vector3)
 	local wallAngle: number
 	local dWallAngle: number
@@ -806,13 +871,13 @@ local function commonLandingCancels(
 	local floor = m.Floor
 
 	if floor and floor.Normal.Y < 0.2923717 then
-		return m:PushOffSteepFloor(Action.FREEFALL)
+		return m:PushOffSteepFloor(landingAction.VerySteepAction or Action.FREEFALL)
 	end
 
 	m.DoubleJumpTimer = landingAction.JumpTimer
 
 	if shouldBeginSliding(m) then
-		return m:SetAction(Action.BEGIN_SLIDING)
+		return m:SetAction(landingAction.SlideAction or Action.BEGIN_SLIDING)
 	end
 
 	if m.Input:Has(InputFlags.FIRST_PERSON) then
@@ -830,7 +895,7 @@ local function commonLandingCancels(
 	end
 
 	if m.Input:Has(InputFlags.OFF_FLOOR) then
-		return m:SetAction(Action.FREEFALL)
+		return m:SetAction(landingAction.OffFloorAction or Action.FREEFALL)
 	end
 
 	return false
@@ -904,7 +969,7 @@ local function commonGroundKnockbackAction(
 	return animFrame
 end
 
-local function commonLandingAction(m: Mario, anim: Animation)
+local function commonLandingAction(m: Mario, anim: Animation, airAction: number?)
 	if m.Input:Has(InputFlags.NONZERO_ANALOG) then
 		applyLandingAccel(m, 0.98)
 	elseif m.ForwardVel > 16 then
@@ -916,7 +981,7 @@ local function commonLandingAction(m: Mario, anim: Animation)
 	local stepResult = m:PerformGroundStep()
 
 	if stepResult == GroundStep.LEFT_GROUND then
-		m:SetAction(Action.FREEFALL)
+		m:SetAction(airAction or Action.FREEFALL)
 	elseif stepResult == GroundStep.HIT_WALL then
 		m:SetAnimation(Animations.PUSHING)
 	end
@@ -996,6 +1061,89 @@ DEF_ACTION(Action.WALKING, function(m: Mario)
 	checkLedgeClimbDown(m)
 	tiltBodyWalking(m, startYaw)
 
+	return false
+end)
+
+DEF_ACTION(Action.HOLD_WALKING, function(m: Mario)
+	local heldObj = (m :: any).HeldObj
+	local marioObj = (m :: any).MarioObj
+
+	if heldObj and heldObj.Behavior == "bhvJumpingBox" then
+		return m:SetAction(Action.CRAZY_BOX_BOUNCE)
+	end
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.WALKING)
+	end
+
+	if shouldBeginSliding(m) then
+		return m:SetAction(Action.HOLD_BEGIN_SLIDING)
+	end
+
+	if m.Input:Has(InputFlags.B_PRESSED) then
+		return m:SetAction(Action.THROWING)
+	end
+
+	if m.Input:Has(InputFlags.A_PRESSED) then
+		return m:SetAction(Action.HOLD_JUMP)
+	end
+
+	if m.Input:Has(InputFlags.NO_MOVEMENT) then
+		return m:SetAction(Action.HOLD_DECELERATING)
+	end
+
+	if m.Input:Has(InputFlags.Z_PRESSED) then
+		return m:DropAndSetAction(Action.CROUCH_SLIDE)
+	end
+
+	m.IntendedMag *= 0.4
+	updateWalkingSpeed(m)
+
+	local stepResult = m:PerformGroundStep()
+	if stepResult == GroundStep.LEFT_GROUND then
+		m:SetAction(Action.HOLD_FREEFALL)
+	elseif stepResult == GroundStep.HIT_WALL then
+		if m.ForwardVel > 16.0 then
+			m:SetForwardVel(16.0)
+		end
+	end
+
+	animAndAudioForHoldWalk(m)
+
+	if 0.4 * m.IntendedMag - m.ForwardVel > 10.0 then
+		m.ParticleFlags:Add(ParticleFlags.DUST)
+	end
+
+	return false
+end)
+
+DEF_ACTION(Action.HOLD_HEAVY_WALKING, function(m: Mario)
+	if m.Input:Has(InputFlags.B_PRESSED) then
+		return m:SetAction(Action.THROWING)
+	end
+
+	if shouldBeginSliding(m) then
+		return m:DropAndSetAction(Action.BEGIN_SLIDING)
+	end
+
+	if m.Input:Has(InputFlags.NO_MOVEMENT) then
+		return m:SetAction(Action.HOLD_HEAVY_IDLE)
+	end
+
+	m.IntendedMag *= 0.1
+
+	updateWalkingSpeed(m)
+
+	local stepResult = m:PerformGroundStep()
+	if stepResult == GroundStep.LEFT_GROUND then
+		m:DropAndSetAction(Action.HOLD_FREEFALL)
+	elseif stepResult == GroundStep.HIT_WALL then
+		if m.ForwardVel > 10.0 then
+			m:SetForwardVel(10.0)
+		end
+	end
+
+	animAndAudioForHeavyWalk(m)
 	return false
 end)
 
@@ -1193,6 +1341,65 @@ DEF_ACTION(Action.DECELERATING, function(m: Mario)
 
 		m:SetAnimationWithAccel(Animations.WALKING, accel)
 		playStepSound(m, 10, 49)
+	end
+
+	return false
+end)
+
+DEF_ACTION(Action.HOLD_DECELERATING, function(m: Mario)
+	local slopeClass = m:GetFloorClass()
+	local marioObj = (m :: any).MarioObj
+
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.WALKING)
+	end
+
+	if shouldBeginSliding(m) then
+		return m:SetAction(Action.HOLD_BEGIN_SLIDING)
+	end
+
+	if m.Input:Has(InputFlags.B_PRESSED) then
+		return m:SetAction(Action.THROWING)
+	end
+
+	if m.Input:Has(InputFlags.A_PRESSED) then
+		return m:SetAction(Action.HOLD_JUMP)
+	end
+
+	if m.Input:Has(InputFlags.Z_PRESSED) then
+		return m:DropAndSetAction(Action.CROUCH_SLIDE)
+	end
+
+	if m.Input:Has(InputFlags.NONZERO_ANALOG) then
+		return m:SetAction(Action.HOLD_WALKING)
+	end
+
+	if updateDeceleratingSpeed(m) then
+		return m:SetAction(Action.HOLD_IDLE)
+	end
+
+	m.IntendedMag *= 0.4
+
+	local stepResult = m:PerformGroundStep()
+	if stepResult == GroundStep.LEFT_GROUND then
+		m:SetAction(Action.HOLD_FREEFALL)
+	elseif stepResult == GroundStep.HIT_WALL then
+		if slopeClass == SurfaceClass.VERY_SLIPPERY then
+			m:BonkReflection(true)
+		else
+			m:SetForwardVel(0)
+		end
+	end
+
+	if slopeClass == SurfaceClass.VERY_SLIPPERY then
+		m:SetAnimation(Animations.IDLE_WITH_LIGHT_OBJ)
+		m:PlaySound(Sounds.MOVING_TERRAIN_SLIDE)
+		m:AdjustSoundForSpeed()
+		m.ParticleFlags:Add(ParticleFlags.DUST)
+	else
+		local accel = math.min(m.ForwardVel * 0x10000, 0x1000)
+		m:SetAnimationWithAccel(Animations.WALK_WITH_LIGHT_OBJ, accel)
+		playStepSound(m, 12, 62)
 	end
 
 	return false
@@ -1411,6 +1618,15 @@ DEF_ACTION(Action.STOMACH_SLIDE, function(m: Mario)
 	return stomachSlideAction(m, Action.STOMACH_SLIDE_STOP, Action.FREEFALL, Animations.SLIDE_DIVE)
 end)
 
+DEF_ACTION(Action.HOLD_STOMACH_SLIDE, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.WALKING)
+	end
+
+	return stomachSlideAction(m, Action.DIVE_PICKING_UP, Action.HOLD_FREEFALL, Animations.SLIDE_DIVE)
+end)
+
 DEF_ACTION(Action.DIVE_SLIDE, function(m: Mario)
 	if not m.Input:Has(InputFlags.ABOVE_SLIDE) and m.Input:Has(InputFlags.A_PRESSED, InputFlags.B_PRESSED) then
 		return m:SetAction(if m.ForwardVel >= 0 then Action.FORWARD_ROLLOUT else Action.BACKWARD_ROLLOUT)
@@ -1494,12 +1710,40 @@ DEF_ACTION(Action.JUMP_LAND, function(m: Mario)
 	return false
 end)
 
+DEF_ACTION(Action.HOLD_JUMP_LAND, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.JUMP_LAND_STOP)
+	end
+
+	if commonLandingCancels(m, sHoldJumpLandAction, m.SetJumpingAction) then
+		return true
+	end
+
+	commonLandingAction(m, Animations.JUMP_LAND_WITH_LIGHT_OBJ, Action.HOLD_IDLE)
+	return false
+end)
+
 DEF_ACTION(Action.FREEFALL_LAND, function(m: Mario)
 	if commonLandingCancels(m, sFreefallLandAction, m.SetJumpingAction) then
 		return true
 	end
 
 	commonLandingAction(m, Animations.GENERAL_LAND)
+	return false
+end)
+
+DEF_ACTION(Action.HOLD_FREEFALL_LAND, function(m: Mario)
+	local marioObj = (m :: any).MarioObj
+	if marioObj and marioObj.InteractStatus:Has(InteractionStatus.MARIO_DROP_OBJECT) then
+		return m:DropAndSetAction(Action.FREEFALL_LAND_STOP)
+	end
+
+	if commonLandingCancels(m, sHoldFreefallLandAction, m.SetJumpingAction) then
+		return true
+	end
+
+	commonLandingAction(m, Animations.FALL_LAND_WITH_LIGHT_OBJ, Action.HOLD_FREEFALL)
 	return false
 end)
 
@@ -1574,37 +1818,6 @@ DEF_ACTION(Action.BACKFLIP_LAND, function(m: Mario)
 	end
 
 	commonLandingAction(m, Animations.TRIPLE_JUMP_LAND)
-	return false
-end)
-
-DEF_ACTION(Action.PUNCHING, function(m: Mario)
-	if m.Input:Has(InputFlags.STOMPED) then
-		return m:SetAction(Action.SHOCKWAVE_BOUNCE)
-	end
-
-	if m.Input:Has(InputFlags.NONZERO_ANALOG, InputFlags.A_PRESSED, InputFlags.OFF_FLOOR, InputFlags.ABOVE_SLIDE) then
-		return m:CheckCommonActionExits()
-	end
-
-	if m.ActionState and m.Input:Has(InputFlags.A_DOWN) then
-		return m:SetAction(Action.JUMP_KICK)
-	end
-
-	m.ActionState = 1
-
-	if m.ActionArg == 0 then
-		m.ActionTimer = 7
-	end
-
-	m:SetForwardVel(sPunchingForwardVelocities[m.ActionTimer + 1])
-
-	if m.ActionTimer > 0 then
-		m.ActionTimer -= 1
-	end
-
-	m:UpdatePunchSequence()
-	m:PerformGroundStep()
-
 	return false
 end)
 
