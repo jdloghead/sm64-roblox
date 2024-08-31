@@ -42,8 +42,8 @@ end
 ]]
 function PlatformDisplacement.ApplyPlatformDisplacement(o: Mario | Object, isMario: boolean, platform: BasePart)
 	local faceAngleAdd, positionAdd = getPlatformInertia(platform, Util.ToRoblox(o.Position))
-
 	o.Position += positionAdd
+
 	if isMario then
 		(o :: any).Inertia = positionAdd
 		o.FaceAngle += faceAngleAdd

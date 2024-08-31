@@ -51,6 +51,8 @@ local sHoldJumpLandAction: LandingAction = {
 	APressedAction = Action.HOLD_JUMP,
 	AirAction = Action.HOLD_FREEFALL,
 	SlideAction = Action.HOLD_BEGIN_SLIDING,
+	VerySteepAction = Action.HOLD_FREEFALL,
+	OffFloorAction = Action.HOLD_FREEFALL,
 }
 
 local sFreefallLandAction: LandingAction = {
@@ -67,6 +69,8 @@ local sHoldFreefallLandAction: LandingAction = {
 
 	EndAction = Action.HOLD_FREEFALL_LAND_STOP,
 	APressedAction = Action.HOLD_JUMP,
+	VerySteepAction = Action.HOLD_FREEFALL,
+	OffFloorAction = Action.HOLD_FREEFALL,
 }
 
 local sSideFlipLandAction: LandingAction = {
@@ -1634,9 +1638,20 @@ DEF_ACTION(Action.DIVE_SLIDE, function(m: Mario)
 
 	m:PlayLandingSoundOnce(Sounds.ACTION_TERRAIN_BODY_HIT_GROUND)
 
+	--! If the dive slide ends on the same frame that we pick up on object,
+	-- Mario will not be in the dive slide action for the call to
+	-- mario_check_object_grab, and so will end up in the regular picking action,
+	-- rather than the picking up after dive action.
+
 	if updateSliding(m, 8) and m:IsAnimAtEnd() then
 		m:SetForwardVel(0)
 		m:SetAction(Action.STOMACH_SLIDE_STOP)
+	end
+
+	if m:CheckObjectGrab() then
+		m:GrabUsedObject()
+		m.BodyState.GrabPos = 0x01
+		return true
 	end
 
 	commonSlideAction(m, Action.STOMACH_SLIDE_STOP, Action.FREEFALL, Animations.DIVE)

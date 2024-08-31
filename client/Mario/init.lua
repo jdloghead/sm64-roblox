@@ -50,6 +50,7 @@ local SurfaceClass = Enums.SurfaceClass
 local ParticleFlags = Enums.ParticleFlags
 
 local AirStep = Enums.AirStep
+local HangStep = Enums.HangStep
 local GroundStep = Enums.GroundStep
 
 export type BodyState = Types.BodyState
@@ -111,13 +112,11 @@ local function solveContinuousClip(m: Mario, nextPos: Vector3, heightOff: number
 		if nextClip then
 			local ignoreWall, ignoreFloor, ignoreCeil = Util.GetIgnoredCollisions(nextClip)
 			local normalY = nextClip.Normal.Y
-			local push = Vector3.zero
 
+			-- Push away from wall
 			if not ignoreWall and (math.abs(normalY) < 0.01) then
-				push += nextClip.Normal * 5
+				maybeNextPos = Util.SetY(nextClip.Position + (nextClip.Normal * 5), nextPos.Y)
 			end
-
-			maybeNextPos = Util.SetY(nextClip.Position + push, nextPos.Y)
 
 			-- safe floor push, otherwise mario'd get propulsed upwards/downwards in
 			-- a weird way since the ray origin vector is higher than m.Position
@@ -128,9 +127,14 @@ local function solveContinuousClip(m: Mario, nextPos: Vector3, heightOff: number
 			end
 		end
 
-		-- Oops! Manual fix!
-		if (m.Floor and math.abs(m.Floor.Normal.Y) < 0.707) and math.abs(m.Position.Y - m.FloorHeight) < 1.0 then
-			local angleDiff = ((SHORT_TO_RAD * (m.FloorAngle - m.FaceAngle.Y)) - RAD90) / RAD90
+		-- Move maybeNextPos up/down depending on the angle we're looking at from the normal
+		-- so steep floor angles can be detected
+		local slopeDisplaceApplicable = math.abs(m.Position.Y - m.FloorHeight) < 1.0
+		local surfNormal = m.Floor and m.Floor.Normal or Vector3.one
+		local surfAngle = m.FloorAngle
+
+		if math.abs(surfNormal.Y) < 0.8 and slopeDisplaceApplicable then
+			local angleDiff = ((SHORT_TO_RAD * (surfAngle - m.FaceAngle.Y)) - RAD90) / RAD90
 			maybeNextPos += Vector3.yAxis * 16 * math.clamp(angleDiff, -1, 1) * math.sign(m.ForwardVel)
 		end
 
@@ -808,6 +812,11 @@ function Mario.GrabUsedObject(m: Mario)
 	-- Placeholder until replaced
 end
 
+function Mario.CheckObjectGrab(m: Mario): boolean
+	-- Placeholder until replaced
+	return false
+end
+
 function Mario.SetJumpFromLanding(m: Mario)
 	if m.QuicksandDepth >= 11.0 then
 		return m:SetAction(Action.QUICKSAND_JUMP_LAND, 0)
@@ -918,9 +927,13 @@ function Mario.UpdatePunchSequence(m: Mario)
 		end
 
 		m:SetAnimation(Animations.FIRST_PUNCH)
-		m.ActionArg = m:IsAnimAtEnd() and 2 or 1
+		m.ActionArg = m:IsAnimPastEnd() and 2 or 1
 
 		if m.AnimFrame >= 2 then
+			if m:CheckObjectGrab() then
+				return true
+			end
+
 			m.Flags:Add(MarioFlags.PUNCHING)
 		end
 	elseif actionArg == 2 then
@@ -1088,7 +1101,6 @@ function Mario.UpdateWindyGround(m: Mario): boolean
 		end
 
 		m.Velocity += Vector3.new(pushSpeed * Util.Sins(pushAngle), 0, pushSpeed * Util.Coss(pushAngle))
-
 		return true
 	end
 
@@ -1362,6 +1374,7 @@ function Mario.PerformAirQuarterStep(m: Mario, intendedPos: Vector3, stepArg: nu
 	end
 
 	-- [on continuous step] ur getting nerfed kid
+	-- hopefully this doesn't affect elevator BLJs
 	-- (Shouldn't be done on ground step)
 	if m.ForwardVel < -256 and upperWall and FFLAG_CONTINOUS_INSTEAD_OF_QSTEP then
 		m:SetForwardVel(0)
@@ -1481,6 +1494,11 @@ function Mario.PerformAirStep(m: Mario, maybeStepArg: number?)
 	local stepResult = AirStep.NONE
 	m.Wall = nil
 
+	if math.abs(m.Inertia.Y) > 0 then
+		-- m.Velocity = Util.SetY(m.Velocity, math.max(m.Velocity.Y, m.Inertia.Y))
+		m.Inertia *= Vector3.new(1, 0, 1)
+	end
+
 	local steps = FFLAG_CONTINOUS_INSTEAD_OF_QSTEP and 1 or 4
 	for _ = 1, steps do
 		local intendedVel = m.Velocity + (FFLAG_USE_INERTIA and m.Inertia or Vector3.zero)
@@ -1517,6 +1535,52 @@ function Mario.PerformAirStep(m: Mario, maybeStepArg: number?)
 	m.GfxAngle = Vector3int16.new(0, m.FaceAngle.Y, 0)
 
 	return stepResult
+end
+
+function Mario.PerformHangingStep(m: Mario, nextPos: Vector3)
+	local ceil, floor, wall
+	local ceilHeight, floorHeight
+	local ceilOffset
+
+	nextPos = solveContinuousClip(m, nextPos, 50)
+	nextPos, wall = Util.FindWallCollisions(nextPos, 50, 50)
+
+	m.Wall = wall
+	floorHeight, floor = Util.FindFloor(nextPos)
+	ceilHeight, ceil = Util.FindCeil(nextPos, floorHeight)
+
+	if floor == nil then
+		return HangStep.HIT_CEIL_OR_OOB
+	end
+
+	if ceil == nil then
+		return HangStep.LEFT_CEIL
+	end
+
+	if ceilHeight - floorHeight <= 160 then
+		return HangStep.HIT_CEIL_OR_OOB
+	end
+
+	if m:GetCeilType() ~= SurfaceClass.HANGABLE then
+		return HangStep.LEFT_CEIL
+	end
+
+	ceilOffset = ceilHeight - (nextPos.Y + 160.0)
+	if ceilOffset < -30.0 then
+		return HangStep.CEIL_OR_OOB
+	elseif ceilOffset > 30.0 then
+		return HangStep.LEFT_CEIL
+	end
+
+	nextPos = Util.SetY(nextPos, m.CeilHeight - 160)
+	m.Position = nextPos
+
+	m.Floor = floor
+	m.FloorHeight = floorHeight
+	m.Ceil = ceil
+	m.CeilHeight = ceilHeight
+
+	return HangStep.NONE
 end
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1696,7 +1760,36 @@ function Mario.ResetBodyState(m: Mario)
 	bodyState.ModelState:Clear()
 	bodyState.WingFlutter = false
 
+	m:SwitchHandGrabPos("RENDER")
 	m.Flags:Remove(MarioFlags.METAL_SHOCK)
+end
+
+-- what?
+function Mario.SwitchHandGrabPos(m: Mario, callContext, b, mtx)
+	local bodyState = m.BodyState
+	local translation = Vector3.zero
+
+	if callContext == "RENDER" then
+		if (m :: any).HeldObj ~= nil then
+			local grabPos = bodyState.GrabPos
+
+			if grabPos == 0x01 then
+				if m.Action:Has(ActionFlags.THROWING) then
+					translation = Vector3.new(50, 0, 0)
+				else
+					translation = Vector3.new(50, 0, 110)
+				end
+			end
+		end
+	elseif callContext == "HELD_OBJ" then
+		-- ! The HOLP is set here, which is why it only updates when the held object is drawn.
+		-- This is why it won't update during a pause buffered hitstun or when the camera is very far
+		-- away.
+	end
+
+	bodyState.HeldObjLastPos = m.Position + (Vector3.new(Util.Sins(m.FaceAngle.Y), 0, Util.Coss(m.FaceAngle.Y)) * 50)
+
+	return nil
 end
 
 function Mario.SinkInQuicksand(m: Mario)
@@ -2265,12 +2358,6 @@ function Mario.ExecuteAction(m: Mario): number
 	m:SquishModel()
 	m:UpdateHealth()
 	m:UpdateModel()
-
-	local group = bit32.band(m.Action(), ActionGroups.GROUP_MASK)
-
-	if group ~= ActionGroups.AIRBORNE and m.Inertia ~= Vector3.zero then
-		m.Inertia = Vector3.zero
-	end
 
 	return m.ParticleFlags()
 end

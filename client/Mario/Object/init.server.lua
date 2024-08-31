@@ -86,19 +86,21 @@ DEF_ACTION(Action.PICKING_UP, function(m: Mario)
 	end
 
 	if m.ActionState == 1 then
-		local heldObj: any = assert((m :: any).HeldObj)
+		local heldObj: any = (m :: any).HeldObj
 
-		if heldObj.InteractionSubtype:Has(InteractionSubtype.GRABS_MARIO) then
-			m.BodyState.GrabPos = 0x02 -- GRAB_POS_HEAVY_OBJ
-			m:SetAnimation(Animations.GRAB_HEAVY_OBJECT)
-			if m:IsAnimAtEnd() then
-				m:SetAction(Action.HOLD_HEAVY_IDLE)
-			end
-		else
-			m.BodyState.GrabPos = 0x01 -- GRAB_POS_LIGHT_OBJ
-			m:SetAnimation(Animations.PICK_UP_LIGHT_OBJ)
-			if m:IsAnimAtEnd() then
-				m:SetAction(Action.HOLD_IDLE)
+		if heldObj then
+			if heldObj.InteractionSubtype:Has(InteractionSubtype.GRABS_MARIO) then
+				m.BodyState.GrabPos = 0x02 -- GRAB_POS_HEAVY_OBJ
+				m:SetAnimation(Animations.GRAB_HEAVY_OBJECT)
+				if m:IsAnimAtEnd() then
+					m:SetAction(Action.HOLD_HEAVY_IDLE)
+				end
+			else
+				m.BodyState.GrabPos = 0x01 -- GRAB_POS_LIGHT_OBJ
+				m:SetAnimation(Animations.PICK_UP_LIGHT_OBJ)
+				if m:IsAnimAtEnd() then
+					m:SetAction(Action.HOLD_IDLE)
+				end
 			end
 		end
 	end

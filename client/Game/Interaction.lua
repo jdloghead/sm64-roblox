@@ -38,10 +38,20 @@ type Object = {
 	Position: Vector3,
 	Velocity: Vector3,
 
+	MoveAnglePitch: number,
+	MoveAngleYaw: number,
+	MoveAngleRoll: number,
+
+	FaceAnglePitch: number,
+	FaceAngleYaw: number,
+	FaceAngleRoll: number,
+
 	HitboxRadius: number,
 	HitboxHeight: number,
 
 	DamageOrCoinValue: number,
+
+	Behavior: any, -- ?
 
 	-- PseudoObject values, they're SPECIFICALLY for
 	-- emulating SM64 objects.
@@ -405,7 +415,7 @@ end
 local function marioGrabUsedObject(m: any)
 	if m.HeldObj == nil then
 		m.HeldObj = m.UsedObj
-		-- objSetHeldState(m.HeldObj, bhvCarrySomething3)
+		m.HeldObj:SetHeldState("bhvCarrySomething3")
 	end
 end
 
@@ -440,7 +450,7 @@ local function marioThrowHeldObject(m: any)
 			-- stopShellMusic()
 		end
 
-		-- objSetHeldState(m.HeldObj, bhvCarrySomething5)
+		m.HeldObj:SetHeldState("bhvCarrySomething5")
 
 		local holp = m.BodyState.HeldObjLastPos
 		m.HeldObj.Position = Vector3.new(
@@ -538,7 +548,7 @@ local function marioCheckObjectGrab(m: Mario)
 	if m.Input:Has(InputFlags.INTERACT_OBJ_GRABBABLE) and interactObj then
 		local Script = interactObj.Behavior
 
-		if Script == "Bowser" then
+		if Script == "bhvBowser" then
 			--
 		else
 			local facingDYaw = Util.SignedShort(marioObjAngleToObject(m, interactObj) - m.FaceAngle.Y)
@@ -595,6 +605,32 @@ local function bounceBackFromAttack(m: Mario, interaction: number)
 	end
 end
 
+local function checkObjectGrabMario(m: Mario, _, o: Object): boolean
+	local interactionSubtype = (o :: any).InteractionSubtype
+
+	if not interactionSubtype then
+		return false
+	end
+
+	if
+		(not m.Action:Has(ActionFlags.AIR, ActionFlags.INVULNERABLE, ActionFlags.ATTACKING) or not sInvulnerable)
+		and interactionSubtype:Has(InteractionSubtype.GRABS_MARIO)
+	then
+		Interaction.MarioStopRidingAndHolding(m);
+		(o :: any).InteractStatus.Value = bit32.bor(InteractionStatus.INTERACTED, InteractionStatus.GRABBED_MARIO)
+
+		m.FaceAngle.Y = o.MoveAngleYaw or 0;
+		(m :: any).InteractObj = o;
+		(m :: any).UsedObj = o
+
+		m:PlaySound(Sounds.MARIO_OOOF)
+		return m:SetAction(Action.GRABBED)
+	end
+
+	pushMarioOutOfObject(m, o, -5.0)
+	return false
+end
+
 --[[
 local function shouldPushOrPullDoor(m: Mario, point: Vector3, cframe: CFrame): number
 	local dx = point.X - m.Position.X
@@ -623,7 +659,7 @@ function Interaction.InteractFlame(m: Mario, o: Object): boolean
 		if (o :: any).InteractStatus then
 			(o :: any).InteractStatus = InteractionStatus.INTERACTED
 		end
-		-- m.InteractObj = o
+		(m :: any).InteractObj = o
 
 		if m.Action:Has(ActionFlags.SWIMMING, ActionFlags.METAL_WATER) and m.WaterLevel - m.Position.Y > 50.0 then
 			m:PlaySound(Sounds.GENERAL_FLAME_OUT)
@@ -669,8 +705,8 @@ function Interaction.InteractKoopaShell(m: Mario, o: Object): boolean
 			or m.Action() == Action.WALKING
 			or m.Action() == Action.HOLD_WALKING
 		then
-			-- m.InteractObj = o
-			-- m.UsedObj = o
+			(m :: any).InteractObj = o;
+			(m :: any).UsedObj = o
 			-- m.RiddenObj = o
 
 			attackObject(o, interaction)
@@ -703,8 +739,8 @@ function Interaction.InteractCap(m: Mario, o: Object | number): boolean
 	else (tonumber(o) or 0)
 
 	if m.Action() ~= Action.GETTING_BLOWN and table.find(acceptableCapFlags, capFlag) then
-		-- m.InteractObj = o
-		if (o :: any).InteractStatus then
+		(m :: any).InteractObj = o
+		if isPseudoObject(o) and (o :: any).InteractStatus then
 			(o :: any).InteractStatus = InteractionStatus.INTERACTED
 		end
 
@@ -779,8 +815,8 @@ function Interaction.InteractStarOrKey(m: Mario, o: Object): boolean
 			(o :: any).InteractStatus = InteractionStatus.INTERACTED
 		end
 
-		-- m.InteractObj = o
-		-- m.UsedObj = o
+		(m :: any).InteractObj = o;
+		(m :: any).UsedObj = o
 
 		-- starIndex = bit32.band(bit32.rshift(o.BhvParams, 24), 0x1F)
 		-- saveFileCollectStarOrKey(m.NumCoins, starIndex)
@@ -851,9 +887,9 @@ function Interaction.InteractShock(m: Mario, o: Object): boolean
 
 	sInvulnerable = (m.Action:Has(ActionFlags.INVULNERABLE) or m.InvincTimer ~= 0)
 	if not sInvulnerable and not m.Flags:Has(MarioFlags.VANISH_CAP) then
-		local actionArg = m.Action:Has(ActionFlags.AIR, ActionFlags.ON_POLE, ActionFlags.HANGING) == false
+		local actionArg = m.Action:Has(ActionFlags.AIR, ActionFlags.ON_POLE, ActionFlags.HANGING) == false;
 
-		-- m.InteractObj = o
+		(m :: any).InteractObj = o
 
 		takeDamageFromInteractObject(m, o)
 		m:PlaySound(Sounds.MARIO_ATTACKED)
@@ -880,8 +916,8 @@ function Interaction.InteractPole(m: Mario, o: Object): boolean
 			local velConv = m.ForwardVel
 			local lowSpeed = m.ForwardVel <= 10.0
 
-			Interaction.MarioStopRidingAndHolding(m)
-			-- m.InteractObj = o
+			Interaction.MarioStopRidingAndHolding(m);
+			(m :: any).InteractObj = o
 
 			--! Still using BaseParts for poles.
 			--  Change to your own solution for SM64 objects if any
@@ -929,8 +965,43 @@ function Interaction.InteractCoin(m: Mario, o: Object): boolean
 	return false
 end
 
-function Interaction.InteractGrabbable(m: Mario, o: Object): boolean
-	-- TODO?
+-- Advanced objects only
+function Interaction.InteractGrabbable(m: Mario, o: Object, interactType: number): boolean
+	local Script = o.Behavior
+	local interactionSubtype = (o :: any).InteractionSubtype
+
+	if not interactionSubtype then
+		return false
+	end
+
+	if interactionSubtype:Has(InteractionSubtype.KICKABLE) then
+		local interaction = determineInteraction(m, o)
+
+		if bit32.btest(interaction, bit32.bor(InteractionType.KICK, InteractionType.TRIP)) then
+			attackObject(o, interaction)
+			bounceBackFromAttack(m, interaction)
+			return false
+		end
+	end
+
+	if interactionSubtype:Has(InteractionSubtype.GRABS_MARIO) then
+		if checkObjectGrabMario(m, interactType, o) then
+			return true
+		end
+	end
+
+	if ableToGrabObject(m, o) then
+		if not interactionSubtype:Has(InteractionSubtype.NOT_GRABBABLE) then
+			(m :: any).InteractObj = o
+			m.Input:Add(InputFlags.INTERACT_OBJ_GRABBABLE)
+			return true
+		end
+	end
+
+	if Script ~= "bhvBowser" then
+		pushMarioOutOfObject(m, o, -5.0)
+	end
+
 	return false
 end
 
@@ -1010,8 +1081,16 @@ function Interaction.MarioDropHeldObject(m: Mario)
 	return marioDropHeldObject(m)
 end
 
-function Interaction.MaropThrowHeldObject(m: Mario)
+function Interaction.MarioThrowHeldObject(m: Mario)
 	return marioThrowHeldObject(m)
+end
+
+function Interaction.MarioCheckObjectGrab(m: Mario)
+	return marioCheckObjectGrab(m)
+end
+
+function Interaction.MarioGrabUsedObject(m: Mario)
+	return marioGrabUsedObject(m)
 end
 
 -- @interaction.c

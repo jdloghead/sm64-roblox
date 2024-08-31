@@ -76,7 +76,7 @@ local function checkCommonHoldIdleCancels(m: Mario)
 
 	if marioObj and marioObj.InteractionSubtype:Has(InteractionSubtype.DROP_IMMEDIATELY) then
 		marioObj.InteractionSubtype:Remove(InteractionSubtype.DROP_IMMEDIATELY)
-		return m:DropAndSetAction(Action.PLACING_DOWN)
+		return m:SetAction(Action.PLACING_DOWN)
 	end
 
 	if m.Input:Has(InputFlags.STOMPED) then

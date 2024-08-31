@@ -28,14 +28,9 @@ type Mario = System.Mario
 -- Helpers
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
--- Should this be on the enums?
 local POLE_NONE = 0
 local POLE_TOUCHED_FLOOR = 1
 local POLE_FELL_OFF = 2
-
-local HANG_NONE = 0
-local HANG_HIT_CEIL_OR_OOB = 1
-local HANG_LEFT_CEIL = 2
 
 local function letGoOfLedge(m: Mario)
 	local floorHeight
@@ -273,51 +268,6 @@ DEF_ACTION(Action.LEDGE_CLIMB_FAST, function(m: Mario)
 	return false
 end)
 
-local function PerformHangingStep(m: Mario, nextPos: Vector3)
-	local ceil, floor, wall
-	local ceilHeight, floorHeight
-	local ceilOffset
-
-	nextPos, wall = Util.FindWallCollisions(nextPos, 50, 50)
-
-	m.Wall = wall
-	floorHeight, floor = Util.FindFloor(nextPos)
-	ceilHeight, ceil = Util.FindCeil(nextPos, floorHeight)
-
-	if floor == nil then
-		return HANG_HIT_CEIL_OR_OOB
-	end
-
-	if ceil == nil then
-		return HANG_LEFT_CEIL
-	end
-
-	if ceilHeight - floorHeight <= 160 then
-		return HANG_HIT_CEIL_OR_OOB
-	end
-
-	if m:GetCeilType() ~= SurfaceClass.HANGABLE then
-		return HANG_LEFT_CEIL
-	end
-
-	ceilOffset = ceilHeight - (nextPos.Y + 160.0)
-	if ceilOffset < -30.0 then
-		return HANG_HIT_CEIL_OR_OOB
-	elseif ceilOffset > 30.0 then
-		return HANG_LEFT_CEIL
-	end
-
-	nextPos = Util.SetY(nextPos, m.CeilHeight - 160)
-	m.Position = nextPos
-
-	m.Floor = floor
-	m.FloorHeight = floorHeight
-	m.Ceil = ceil
-	m.CeilHeight = ceilHeight
-
-	return HANG_NONE
-end
-
 local function updateHangMoving(m: Mario)
 	local stepResult
 	local nextPos = Vector3.zero
@@ -357,7 +307,7 @@ local function updateHangMoving(m: Mario)
 	nextPos = Util.SetZ(nextPos, m.Position.Z - m.Ceil.Normal.Y * m.Velocity.Z)
 	nextPos = Util.SetY(nextPos, m.Position.Y)
 
-	stepResult = PerformHangingStep(m, nextPos)
+	stepResult = m:PerformHangingStep(nextPos)
 
 	m.GfxPos = Vector3.zero
 	m.GfxAngle = Vector3int16.new(0, m.FaceAngle.Y, 0)

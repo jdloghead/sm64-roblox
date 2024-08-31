@@ -112,7 +112,9 @@ end
 
 local BUTTON_FEED = {}
 local BUTTON_BINDS = {}
+
 local TAS_INPUT_OVERRIDE = false
+local COMMAND_WALK = false
 
 local function toStrictNumber(str: string): number
 	local result = tonumber(str)
@@ -133,6 +135,12 @@ local function processAction(id: string, state: Enum.UserInputState, input: Inpu
 		if state == Enum.UserInputState.Begin then
 			TAS_INPUT_OVERRIDE = not TAS_INPUT_OVERRIDE
 			print(`<- TAS input override {TAS_INPUT_OVERRIDE and "ON" or "OFF"} ->`)
+		end
+	elseif id == "CommandWalk" then
+		if state == Enum.UserInputState.Begin then
+			COMMAND_WALK = true
+		else
+			COMMAND_WALK = false
 		end
 	else
 		local button = toStrictNumber(id:sub(5))
@@ -180,7 +188,7 @@ local function updateCollisions()
 		if rootPart then
 			local parts = rootPart:GetConnectedParts(true)
 
-			for i, part in parts do
+			for _, part in parts do
 				if part:IsA("BasePart") then
 					part.CanCollide = false
 				end
@@ -201,6 +209,10 @@ local function updateController(controller: Controller, humanoid: Humanoid?)
 	if pos.Magnitude > 0 then
 		if pos.Magnitude > 1 then
 			pos = pos.Unit
+		end
+
+		if COMMAND_WALK then
+			pos *= 0.475
 		end
 
 		mag = pos.Magnitude
@@ -252,6 +264,7 @@ local function updateController(controller: Controller, humanoid: Humanoid?)
 end
 
 ContextActionService:BindAction("MarioDebug", processAction, false, Enum.KeyCode.P)
+ContextActionService:BindAction("CommandWalk", processAction, false, Enum.KeyCode.LeftControl)
 ContextActionService:BindAction("TASInputForceToggle", processAction, false, Enum.KeyCode.RightControl)
 bindInput(Buttons.B_BUTTON, "B", Enum.UserInputType.MouseButton1, Enum.KeyCode.ButtonX)
 bindInput(
@@ -298,7 +311,19 @@ do
 
 	if type(Interaction.MarioThrowHeldObject) == "function" then
 		function Mario.ThrowHeldObject(m: Mario)
-			return Interaction.MaropThrowHeldObject(m)
+			return Interaction.MarioThrowHeldObject(m)
+		end
+	end
+
+	if type(Interaction.MarioCheckObjectGrab) == "function" then
+		function Mario.CheckObjectGrab(m: Mario)
+			return Interaction.MarioCheckObjectGrab(m)
+		end
+	end
+
+	if type(Interaction.MarioGrabUsedObject) == "function" then
+		function Mario.GrabUsedObject(m: Mario)
+			return Interaction.MarioGrabUsedObject(m)
 		end
 	end
 end
@@ -834,6 +859,8 @@ local function update(dt: number)
 					"MarioCaps",
 					`Timer {mario.CapTimer}, Caps: {#caps == 0 and "None" or table.concat(caps, ", ")}`
 				)
+
+				setDebugStat("Inertia", mario.Inertia)
 			end
 
 			for _, name in AUTO_STATS do

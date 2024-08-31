@@ -379,7 +379,11 @@ local function checkWaterJump(m: Mario)
 			m.AngleVel = Vector3int16.new()
 			m.Velocity = Util.SetY(m.Velocity, 62)
 
-			return m:SetAction(Action.WATER_JUMP)
+			if (m :: any).HeldObj == nil then
+				return m:SetAction(Action.WATER_JUMP)
+			else
+				return m:SetAction(Action.HOLD_WATER_JUMP)
+			end
 		end
 	end
 

@@ -13,6 +13,7 @@ local Enums = {
 	MarioInput = require(script.Mario.Input),
 
 	AirStep = require(script.Steps.Air),
+	HangStep = require(script.Steps.Hang),
 	WaterStep = require(script.Steps.Water),
 	GroundStep = require(script.Steps.Ground),
 

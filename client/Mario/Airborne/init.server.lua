@@ -600,7 +600,7 @@ DEF_ACTION(Action.HOLD_FREEFALL, function(m: Mario)
 		m.Input:Has(InputFlags.B_PRESSED)
 		and not (heldObj and heldObj.InteractionSubtype:Has(InteractionSubtype.HOLDABLE_NPC))
 	then
-		return m:DropAndSetAction(Action.AIR_THROW)
+		return m:SetAction(Action.AIR_THROW)
 	end
 
 	if m.Input:Has(InputFlags.Z_PRESSED) then
@@ -731,6 +731,15 @@ DEF_ACTION(Action.DIVE, function(m: Mario)
 	end
 
 	m:SetAnimation(Animations.DIVE)
+
+	if m:CheckObjectGrab() then
+		m:GrabUsedObject()
+		m.BodyState.GrabPos = 0x01
+		if m.Action() ~= Action.DIVE then
+			return true
+		end
+	end
+
 	updateAirWithoutTurn(m)
 	airStep = m:PerformAirStep()
 
@@ -746,7 +755,11 @@ DEF_ACTION(Action.DIVE, function(m: Mario)
 		m.GfxAngle = Util.SetX(m.GfxAngle, -m.FaceAngle.X)
 	elseif airStep == AirStep.LANDED then
 		if not checkFallDamageOrGetStuck(m, Action.HARD_FORWARD_GROUND_KB) then
-			m:SetAction(Action.DIVE_SLIDE)
+			if (m :: any).HeldObj == nil then
+				m:SetAction(Action.DIVE_SLIDE)
+			else
+				m:SetAction(Action.DIVE_PICKING_UP)
+			end
 		end
 
 		m.FaceAngle *= Vector3int16.new(0, 1, 1)
@@ -779,7 +792,7 @@ DEF_ACTION(Action.AIR_THROW, function(m: Mario)
 	local stepResult = m:PerformAirStep()
 	if stepResult == AirStep.LANDED then
 		if not checkFallDamageOrGetStuck(m, Action.HARD_BACKWARD_GROUND_KB) then
-			m.Action:Set(Action.AIR_THROW_LAND)
+			m:SetAction(Action.AIR_THROW_LAND)
 		end
 	elseif stepResult == AirStep.HIT_WALL then
 		m:SetForwardVel(0)
