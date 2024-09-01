@@ -462,6 +462,10 @@ DEF_ACTION(Action.DEBUG_FREE_MOVE, function(m: Mario)
 		pos += Vector3.new(32.0 * speed * Util.Sins(m.IntendedYaw), 0, 32.0 * speed * Util.Coss(m.IntendedYaw))
 	end
 
+	-- don't solve wall collisions for noclip
+	-- local posDisp = Util.FindWallCollisions(pos, 60.0, 50.0)
+	-- pos = posDisp
+
 	local floorHeight, surf = Util.FindFloor(pos)
 	if surf ~= nil then
 		if pos.Y < floorHeight then

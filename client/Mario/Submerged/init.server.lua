@@ -936,7 +936,7 @@ DEF_ACTION(Action.WATER_THROW, function(m: Mario)
 	performWaterStep(m)
 	updateWaterPitch(m)
 
-	m:SetAnimToFrame(Animations.WATER_THROW_OBJ)
+	m:SetAnimation(Animations.WATER_THROW_OBJ)
 	m:PlaySoundIfNoFlag(Sounds.ACTION_SWIM, MarioFlags.ACTION_SOUND_PLAYED)
 
 	m.BodyState.HeadAngle = Util.SetX(m.BodyState.HeadAngle, Util.ApproachFloat(m.BodyState.HeadAngle.X, 0, 0x200))

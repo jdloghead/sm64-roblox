@@ -7,17 +7,15 @@ Mario.__index = Mario
 local FFLAG_FLOOR_NEVER_SLIPPERY = false
 -- (cheat) god mode
 local FFLAG_DEGREELESSNESS_MODE = false
--- (misc) use inertia velocity for airborne
-local FFLAG_USE_INERTIA = false
 -- the StationaryGroundStep function does not check for wall collisions in
 -- certain conds. if you have weird geometry or pushing walls, keep this on
 local FFLAG_SGS_ALWAYS_PERFORMS_STEPS = true
--- fixes wall-cucking (See https://youtu.be/TSCzC-WECw8?t=42)
+-- fixes wallcucking (See https://youtu.be/TSCzC-WECw8?t=42)
 local FFLAG_FIX_WALLCUCKING = false
 -- instead of quarter-step with no verification, it will be a single step,
 -- then fire a ray between old position and next position to avoid clipping
 -- and other weird geometry things (See: https://youtu.be/TSCzC-WECw8?t=90)
-local FFLAG_CONTINOUS_INSTEAD_OF_QSTEP = false
+local FFLAG_CONTINUOUS_INSTEAD_OF_QSTEP = false
 ---------------------------------------------------------------------------------------------------
 
 local SM64 = script.Parent
@@ -101,7 +99,7 @@ local function solveBestWallFromAngle(walls: { RaycastResult }, angle: number): 
 end
 
 local function solveContinuousClip(m: Mario, nextPos: Vector3, heightOff: number?): Vector3
-	if FFLAG_CONTINOUS_INSTEAD_OF_QSTEP then
+	if FFLAG_CONTINUOUS_INSTEAD_OF_QSTEP then
 		local heightOffset: number = (tonumber(heightOff) or 0)
 		local origin = m.Position + (Vector3.yAxis * heightOffset)
 		local delta = nextPos - m.Position
@@ -113,17 +111,14 @@ local function solveContinuousClip(m: Mario, nextPos: Vector3, heightOff: number
 			local ignoreWall, ignoreFloor, ignoreCeil = Util.GetIgnoredCollisions(nextClip)
 			local normalY = nextClip.Normal.Y
 
-			-- Push away from wall
+			-- Push away from clip position
+			-- we make sure we do a safe floor push, otherwise mario'd get propulsed upwards/downwards
+			-- in a weird way since the ray origin vector is higher than m.Position
 			if not ignoreWall and (math.abs(normalY) < 0.01) then
 				maybeNextPos = Util.SetY(nextClip.Position + (nextClip.Normal * 5), nextPos.Y)
-			end
-
-			-- safe floor push, otherwise mario'd get propulsed upwards/downwards in
-			-- a weird way since the ray origin vector is higher than m.Position
-			if (not ignoreFloor) and normalY >= 0.01 then
-				maybeNextPos = Util.SetY(maybeNextPos, nextPos.Y + 5)
-			elseif (not ignoreCeil) and normalY <= -0.01 then
-				maybeNextPos = Util.SetY(maybeNextPos, nextPos.Y - 5)
+			elseif math.abs(normalY) >= 0.01 then
+				local dir = 5 * math.sign(normalY)
+				maybeNextPos = Util.SetY(nextClip.Position, nextPos.Y + dir)
 			end
 		end
 
@@ -590,8 +585,10 @@ function Mario.SetSteepJumpAction(m: Mario)
 	m.SteepJumpYaw = m.FaceAngle.Y
 
 	if m.ForwardVel > 0 then
-		local angleTemp = m.FloorAngle + 0x8000
-		local faceAngleTemp = m.FaceAngle.Y - angleTemp
+		--! ((s16)0x8000) has undefined behavior. Therefore, this downcast has
+		-- undefined behavior if m->floorAngle >= 0.
+		local angleTemp = Util.SignedShort(m.FloorAngle + 0x8000)
+		local faceAngleTemp = Util.SignedShort(m.FaceAngle.Y - angleTemp)
 
 		local y = Util.Sins(faceAngleTemp) * m.ForwardVel
 		local x = Util.Coss(faceAngleTemp) * m.ForwardVel * 0.75
@@ -600,7 +597,7 @@ function Mario.SetSteepJumpAction(m: Mario)
 		m.FaceAngle = Util.SetY(m.FaceAngle, Util.Atan2s(x, y) + angleTemp)
 	end
 
-	m:SetAction(Action.STEEP_JUMP, 0)
+	m:DropAndSetAction(Action.STEEP_JUMP, 0)
 end
 
 function Mario.SetYVelBasedOnFSpeed(m: Mario, initialVelY: number, multiplier: number)
@@ -1206,7 +1203,7 @@ function Mario.PerformGroundStep(m: Mario): number
 	local stepResult: number
 	assert(floor)
 
-	local steps = FFLAG_CONTINOUS_INSTEAD_OF_QSTEP and 1 or 4
+	local steps = FFLAG_CONTINUOUS_INSTEAD_OF_QSTEP and 1 or 4
 	for _ = 1, steps do
 		local intendedVel = m.Velocity
 		local intendedX = m.Position.X + floor.Normal.Y * (intendedVel.X / steps)
@@ -1376,7 +1373,7 @@ function Mario.PerformAirQuarterStep(m: Mario, intendedPos: Vector3, stepArg: nu
 	-- [on continuous step] ur getting nerfed kid
 	-- hopefully this doesn't affect elevator BLJs
 	-- (Shouldn't be done on ground step)
-	if m.ForwardVel < -256 and upperWall and FFLAG_CONTINOUS_INSTEAD_OF_QSTEP then
+	if m.ForwardVel < -256 and upperWall and FFLAG_CONTINUOUS_INSTEAD_OF_QSTEP then
 		m:SetForwardVel(0)
 		return GroundStep.HIT_WALL_STOP_QSTEPS
 	end
@@ -1494,14 +1491,9 @@ function Mario.PerformAirStep(m: Mario, maybeStepArg: number?)
 	local stepResult = AirStep.NONE
 	m.Wall = nil
 
-	if math.abs(m.Inertia.Y) > 0 then
-		-- m.Velocity = Util.SetY(m.Velocity, math.max(m.Velocity.Y, m.Inertia.Y))
-		m.Inertia *= Vector3.new(1, 0, 1)
-	end
-
-	local steps = FFLAG_CONTINOUS_INSTEAD_OF_QSTEP and 1 or 4
+	local steps = FFLAG_CONTINUOUS_INSTEAD_OF_QSTEP and 1 or 4
 	for _ = 1, steps do
-		local intendedVel = m.Velocity + (FFLAG_USE_INERTIA and m.Inertia or Vector3.zero)
+		local intendedVel = m.Velocity + m.Inertia
 		local intendedPos = m.Position + (intendedVel / steps)
 		local result = m:PerformAirQuarterStep(intendedPos, stepArg)
 
@@ -1523,7 +1515,6 @@ function Mario.PerformAirStep(m: Mario, maybeStepArg: number?)
 		m.PeakHeight = m.Position.Y
 	end
 
-	m.Inertia *= 0.985 -- Slowly drag away inertia
 	m.TerrainType = m:GetTerrainType()
 
 	if m.Action() ~= Action.FLYING then
@@ -1567,7 +1558,7 @@ function Mario.PerformHangingStep(m: Mario, nextPos: Vector3)
 
 	ceilOffset = ceilHeight - (nextPos.Y + 160.0)
 	if ceilOffset < -30.0 then
-		return HangStep.CEIL_OR_OOB
+		return HangStep.HIT_CEIL_OR_OOB
 	elseif ceilOffset > 30.0 then
 		return HangStep.LEFT_CEIL
 	end
@@ -1765,7 +1756,7 @@ function Mario.ResetBodyState(m: Mario)
 end
 
 -- what?
-function Mario.SwitchHandGrabPos(m: Mario, callContext, b, mtx)
+function Mario.SwitchHandGrabPos(m: Mario, callContext: string)
 	local bodyState = m.BodyState
 	local translation = Vector3.zero
 
@@ -2143,16 +2134,16 @@ end
 	* Copy position, velocity, and angle variables from MarioState to the Mario
 	* object.
 ]]
-function Mario.CopyMarioStateToObject(m: Mario, o: any)
+function Mario.CopyMarioStateToObject(m: Mario, o: Types.ObjectState)
 	o.Velocity = m.Velocity
 	o.Position = m.Position
 
 	o.MoveAnglePitch = m.GfxAngle.X
-	o.MoveAngleYaw = m.GfxAngle.Y
+	o.MoveAngleYaw = m.FaceAngle.Y
 	o.MoveAngleRoll = m.GfxAngle.Z
 
 	o.FaceAnglePitch = m.GfxAngle.X
-	o.FaceAngleYaw = m.GfxAngle.Y
+	o.FaceAngleYaw = m.FaceAngle.Y
 	o.FaceAngleRoll = m.GfxAngle.Z
 
 	o.AngleVelPitch = m.AngleVel.X
@@ -2304,7 +2295,7 @@ function Mario.ExecuteAction(m: Mario): number
 						cancel = true
 					end
 				elseif group == ActionGroups.OBJECT then
-					local function checkCommonObjectCancels()
+					local function checkCommonObjectCancels(): any
 						if m.Input:Has(InputFlags.SQUISHED) then
 							return m:DropAndSetAction(Action.SQUISHED, 0)
 						end
@@ -2358,6 +2349,11 @@ function Mario.ExecuteAction(m: Mario): number
 	m:SquishModel()
 	m:UpdateHealth()
 	m:UpdateModel()
+
+	local marioObj = (m :: any).MarioObj
+	if marioObj then
+		marioObj.InteractStatus:Clear()
+	end
 
 	return m.ParticleFlags()
 end

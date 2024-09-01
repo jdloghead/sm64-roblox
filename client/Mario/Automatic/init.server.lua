@@ -451,7 +451,7 @@ DEF_ACTION(Action.HANG_MOVING, function(m: Mario)
 			end
 
 			m:SetAction(Action.HANGING, m.ActionArg)
-		elseif m:IsAnimPastEnd() then
+		elseif m.AnimFrame > 8 then
 			m.ActionArg = bit32.bxor(m.ActionArg, 1)
 		end
 	else

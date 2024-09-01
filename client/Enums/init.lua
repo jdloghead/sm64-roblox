@@ -31,6 +31,7 @@ local Enums = {
 		MoveFlag = require(script.Object.MoveFlag),
 		HeldState = require(script.Object.HeldState),
 		ActiveFlag = require(script.Object.ActiveFlag),
+		CollisionFlag = require(script.Object.CollisionFlag),
 	}),
 
 	Interaction = table.freeze({

@@ -8,15 +8,17 @@ local CollectionService = game:GetService("CollectionService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local Core = script.Parent.Parent
+local RNG = Random.new()
 
 local Enums = require(Core.Client.Enums)
+local SpawnPicker: () -> SpawnLocation? = require(script.SpawnPicker)
 
 local SurfaceClass = Enums.SurfaceClass
 
 ----------------------------------------------FLAGS------------------------------------------------
 -- Don't show debug long raycasts that hit nothing
 local FFLAG_RAY_DBG_IGNORE_LONG_NIL = false
-----------------------------------------------FLAGS------------------------------------------------
+----------------------------------------------------------------------------------------------------
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Helpers
@@ -174,6 +176,18 @@ local function normalIdFromRaycast(result: RaycastResult): Enum.NormalId
 	return maxNormalId
 end
 
+local function randomPositionInPartBounds(part: BasePart): Vector3
+	local size = part.Size
+
+	return part.CFrame:PointToWorldSpace(
+		Vector3.new(
+			RNG:NextNumber(-size.X / 2, size.X / 2),
+			RNG:NextNumber(-size.Y / 2, size.Y / 2),
+			RNG:NextNumber(-size.Z / 2, size.Z / 2)
+		)
+	)
+end
+
 -- stylua: ignore
 local function vectorModifier(getArgs: (Vector3 | Vector3int16, number) -> (number, number, number)):
 	((vec: Vector3, value: number) -> Vector3) & 
@@ -233,6 +247,21 @@ function Util.CFrameToSM64Angles(cframe: CFrame): (number, number, number)
 	local roll = DEGREES(math.deg(math.atan2(lookVector.Y, math.sqrt(lookVector.X ^ 2 + lookVector.Z ^ 2))))
 
 	return pitch, yaw, roll
+end
+
+function Util.GetSpawnPosition(): (Vector3, Vector3int16)
+	local part: SpawnLocation? = SpawnPicker()
+
+	if part then
+		local lookVector = part.CFrame.LookVector
+		local randomPos = randomPositionInPartBounds(part)
+		local extents = Util.GetExtents(part)
+
+		local faceAngle = Util.Atan2s(lookVector.Z, lookVector.X)
+		return Vector3.new(randomPos.X, extents.Y, randomPos.Z), Vector3int16.new(0, faceAngle, 0)
+	end
+
+	return Vector3.new(0, 100, 0), Vector3int16.new()
 end
 
 -- Converts a BasePart's AssemblyAngularVelocity to Pitch Yaw Roll in Signed 16-bit int format.
@@ -308,7 +337,6 @@ function Util.Raycast(pos: Vector3, dir: Vector3, maybeParams: RaycastParams?, w
 	local result = root:Raycast(pos, dir, params)
 
 	local length = result and result.Distance or dir.Magnitude
-
 	if script:GetAttribute("Debug") and not (FFLAG_RAY_DBG_IGNORE_LONG_NIL and length > 256 and result == nil) then
 		local color = Color3.new(result and 0 or 1, result and 1 or 0, 0)
 
@@ -350,10 +378,9 @@ function Util.RaycastSM64(pos: Vector3, dir: Vector3, maybeParams: RaycastParams
 end
 
 function Util.FindFloor(pos: Vector3, dir: Vector3?): (number, RaycastResult?)
+	local dir: Vector3 = typeof(dir) == "Vector3" and dir or -Vector3.yAxis * 15000 / Util.Scale
 	local newPos = pos
 	local height = -11000
-
-	dir = typeof(dir) == "Vector3" and dir or -Vector3.yAxis * 15000 / Util.Scale
 
 	if Core:GetAttribute("TruncateBounds") then
 		local trunc = Vector3int16.new(pos.X, pos.Y, pos.Z)
@@ -407,7 +434,8 @@ function Util.FindFloor(pos: Vector3, dir: Vector3?): (number, RaycastResult?)
 	return height, result
 end
 
-function Util.FindCeil(pos: Vector3, height: number?): (number, RaycastResult?)
+function Util.FindCeil(pos: Vector3, height: number?, dir: Vector3?): (number, RaycastResult?)
+	local dir: Vector3 = typeof(dir) == "Vector3" and dir or Vector3.yAxis * 10000
 	local truncateBounds = Core:GetAttribute("TruncateBounds")
 	local newHeight = truncateBounds and 10000 or math.huge
 
@@ -426,7 +454,7 @@ function Util.FindCeil(pos: Vector3, height: number?): (number, RaycastResult?)
 	end
 
 	local head = Vector3.new(pos.X, (height or pos.Y) + 80, pos.Z)
-	local result = Util.RaycastSM64(head, Vector3.yAxis * 10000, rayParams)
+	local result = Util.RaycastSM64(head, dir, rayParams)
 	result = shouldIgnoreSurface(result, "Ceil")
 
 	if result then

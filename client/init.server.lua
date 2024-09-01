@@ -3,6 +3,8 @@
 ----------------------------------------------FLAGS------------------------------------------------
 -- Calls onReset when mario is considered to be in a dead state
 local FFLAG_AUTO_RESET_ON_DEAD = true
+-- If Mario should spawn on SpawnLocations respectively
+local FFLAG_USE_SPAWNLOCATIONS = false
 -- If the rendered character shouldn't have the position interpolated between frames
 local FFLAG_NO_INTERP = false
 ---------------------------------------------------------------------------------------------------
@@ -54,6 +56,8 @@ local mario: Mario = Mario.new()
 
 local STEP_RATE = 30
 local NULL_TEXT = `<font color="#FF0000">NULL</font>`
+local TRUE_TEXT = `<font color="#00FF00">TRUE</font>`
+local FALSE_TEXT = `<font color="#FF0000">FALSE</font>`
 local FLIP = CFrame.Angles(0, math.pi, 0)
 
 local debugStats = Instance.new("BoolValue")
@@ -587,13 +591,22 @@ local function onReset()
 	end
 
 	local roblox = Vector3.yAxis * 100
+
+	if FFLAG_USE_SPAWNLOCATIONS then
+		local spawnPos, faceAngle = Util.GetSpawnPosition()
+		mario.FaceAngle = faceAngle
+		roblox = spawnPos
+	else
+		mario.FaceAngle = Vector3int16.new()
+	end
+
 	local sm64 = Util.ToSM64(roblox)
 	local char = player.Character
 
 	if char then
 		local reset = char:FindFirstChild("Reset")
 
-		local cf = CFrame.new(roblox)
+		local cf = CFrame.new(roblox) * Util.ToRotation(mario.FaceAngle)
 		char:PivotTo(cf)
 
 		goalCF = cf
@@ -619,11 +632,11 @@ local function onReset()
 	mario.SquishTimer = 0
 	mario.QuicksandDepth = 0
 
+	mario:DropHeldObject()
+	mario.PoleObj = nil
+
 	mario.Position = sm64
 	mario.Velocity = Vector3.zero
-	mario.FaceAngle = Vector3int16.new()
-
-	mario.PoleObj = nil
 
 	mario.Flags:Remove(MarioFlags.SPECIAL_CAPS)
 	mario:SetAction(Action.SPAWN_SPIN_AIRBORNE)
@@ -637,7 +650,7 @@ local function update(dt: number)
 	end
 
 	local now = os.clock()
-	local dt = math.min(dt, 0.1)
+	-- local dt = math.min(dt, 0.1)
 	local gfxRot = CFrame.identity
 	local scale = character:GetScale()
 
@@ -665,7 +678,7 @@ local function update(dt: number)
 	Util.DebugCollisionFaces(mario.Wall, mario.Ceil, mario.Floor)
 	Util.DebugWater(mario.WaterLevel)
 
-	subframe += (now - lastUpdate) * (STEP_RATE * simSpeed)
+	subframe += math.min(now - lastUpdate, 1 / 30) * (STEP_RATE * simSpeed)
 	lastUpdate = now
 
 	--! This code interferes with obtaining the caps normally.
@@ -704,8 +717,13 @@ local function update(dt: number)
 		prevCF = goalCF
 		goalCF = CFrame.new(gfxPos) * FLIP * gfxRot
 
+		local devCameraOffset = Vector3.zero
+		if humanoid then
+			devCameraOffset = humanoid:GetAttribute("CameraOffset") or devCameraOffset
+		end
+
 		prevCameraOffset = goalCameraOffset
-		goalCameraOffset = -gfxPosOffset
+		goalCameraOffset = -gfxPosOffset + devCameraOffset
 	end
 
 	-- Auto reset logic (Optional)
@@ -861,6 +879,8 @@ local function update(dt: number)
 				)
 
 				setDebugStat("Inertia", mario.Inertia)
+
+				-- setDebugStat("HasHeldObj", ((mario :: any).HeldObj ~= nil) and TRUE_TEXT or FALSE_TEXT)
 			end
 
 			for _, name in AUTO_STATS do

@@ -770,7 +770,7 @@ DEF_ACTION(Action.DIVE, function(m: Mario)
 		stopRising(m)
 
 		m.ParticleFlags:Add(ParticleFlags.VERTICAL_STAR)
-		m:SetAction(Action.BACKWARD_AIR_KB)
+		m:DropAndSetAction(Action.BACKWARD_AIR_KB)
 	elseif airStep == AirStep.HIT_LAVA_WALL then
 		lavaBoostOnWall(m)
 	end
@@ -780,9 +780,9 @@ end)
 
 DEF_ACTION(Action.AIR_THROW, function(m: Mario)
 	m.ActionTimer += 1
-
 	if m.ActionTimer == 4 then
 		m:ThrowHeldObject()
+		m:PlaySound(Sounds.ACTION_THROW)
 	end
 
 	m:PlaySoundIfNoFlag(Sounds.MARIO_WAH2, MarioFlags.MARIO_SOUND_PLAYED)
@@ -792,7 +792,7 @@ DEF_ACTION(Action.AIR_THROW, function(m: Mario)
 	local stepResult = m:PerformAirStep()
 	if stepResult == AirStep.LANDED then
 		if not checkFallDamageOrGetStuck(m, Action.HARD_BACKWARD_GROUND_KB) then
-			m:SetAction(Action.AIR_THROW_LAND)
+			m.Action.Value = Action.AIR_THROW_LAND
 		end
 	elseif stepResult == AirStep.HIT_WALL then
 		m:SetForwardVel(0)
@@ -1094,8 +1094,11 @@ DEF_ACTION(Action.SOFT_BONK, function(m: Mario)
 end)
 
 DEF_ACTION(Action.AIR_HIT_WALL, function(m: Mario)
-	m.ActionTimer += 1
+	if (m :: any).HeldObj ~= nil then
+		m:DropHeldObject()
+	end
 
+	m.ActionTimer += 1
 	if m.ActionTimer <= 2 then
 		if m.Input:Has(InputFlags.A_PRESSED) then
 			m.Velocity = Util.SetY(m.Velocity, 52)
@@ -1210,6 +1213,8 @@ DEF_ACTION(Action.HOLD_BUTT_SLIDE_AIR, function(m: Mario)
 		m:PlayLandingSound()
 	elseif stepResult == AirStep.HIT_WALL then
 		stopRising(m)
+
+		m:DropHeldObject()
 		m.ParticleFlags:Add(ParticleFlags.VERTICAL_STAR)
 		m:SetAction(Action.BACKWARD_AIR_KB)
 	elseif stepResult == AirStep.HIT_LAVA_WALL then

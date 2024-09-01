@@ -424,7 +424,7 @@ local function marioDropHeldObject(m: any)
 	local heldObj = m.HeldObj
 
 	if heldObj ~= nil then
-		--if m.HeldObj.Behavior == "KoopaShellUnderwater" then
+		--if m.HeldObj.Behavior == "bhvKoopaShellUnderwater" then
 		--	stopShellMusic()
 		--end
 
@@ -446,7 +446,7 @@ end
 -- obsolete atm
 local function marioThrowHeldObject(m: any)
 	if m.HeldObj ~= nil then
-		if m.HeldObj.Behavior == "KoopaShellUnderwater" then
+		if m.HeldObj.Behavior == "bhvKoopaShellUnderwater" then
 			-- stopShellMusic()
 		end
 
@@ -510,7 +510,6 @@ local function marioRetreiveCap(m: Mario)
 	m.Flags:Remove(MarioFlags.NORMAL_CAP, MarioFlags.CAP_IN_HAND)
 end
 
--- obsolete atm
 local function ableToGrabObject(m: Mario, o: Object): boolean
 	local action = m.Action()
 
@@ -540,7 +539,6 @@ local function marioGetCollidedObject(m: Mario, interactType: number)
 	return nil
 end
 
--- obsolete atm
 local function marioCheckObjectGrab(m: Mario)
 	local result = false
 	local interactObj = (m :: any).InteractObj
@@ -653,7 +651,7 @@ function Interaction.InteractFlame(m: Mario, o: Object): boolean
 	if
 		m.Health > 0xFF
 		and m.InvincTimer <= 0
-		and not m.Action:Has(ActionFlags.INVULNERABLE)
+		and not m.Action:Has(ActionFlags.INVULNERABLE, ActionFlags.INTANGIBLE)
 		and not m.Flags:Has(MarioFlags.METAL_CAP, MarioFlags.VANISH_CAP)
 	then
 		if (o :: any).InteractStatus then

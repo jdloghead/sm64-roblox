@@ -24,6 +24,7 @@ type Mario = System.Mario
 local DEF_ACTION: (number, (Mario) -> boolean) -> () = System.RegisterAction
 
 local function checkCommonIdleCancels(m: Mario)
+	m:DropHeldObject()
 	local floor = m.Floor
 
 	if floor and floor.Normal.Y < 0.29237169 then
@@ -60,7 +61,7 @@ local function checkCommonIdleCancels(m: Mario)
 	end
 
 	if m.Input:Has(InputFlags.Z_DOWN) then
-		return m:DropAndSetAction(Action.START_CROUCHING)
+		return m:SetAction(Action.START_CROUCHING)
 	end
 
 	return false
@@ -117,7 +118,7 @@ local function stoppingStep(m: Mario, anim: Animation, action: number)
 	m:StationaryGroundStep()
 	m:SetAnimation(anim)
 
-	if m:IsAnimPastEnd() then
+	if m:IsAnimAtEnd() then
 		m:SetAction(action)
 	end
 end
@@ -775,7 +776,6 @@ DEF_ACTION(Action.AIR_THROW_LAND, function(m: Mario)
 	end
 
 	m.ActionTimer += 1
-
 	if m.ActionTimer == 4 then
 		m:ThrowHeldObject()
 	end

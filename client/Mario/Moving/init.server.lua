@@ -565,6 +565,8 @@ local function checkGroundDiveOrPunch(m: Mario)
 end
 
 local function beginBrakingAction(m: Mario)
+	m:DropHeldObject()
+
 	if m.ActionState == 1 then
 		m.FaceAngle = Util.SetY(m.FaceAngle, m.ActionArg)
 		return m:SetAction(Action.STANDING_AGAINST_WALL)
@@ -1011,6 +1013,8 @@ DEF_ACTION(Action.WALKING, function(m: Mario)
 	local startPos
 	local startYaw = m.FaceAngle.Y
 
+	m:DropHeldObject()
+
 	if shouldBeginSliding(m) then
 		return m:SetAction(Action.BEGIN_SLIDING)
 	end
@@ -1401,7 +1405,7 @@ DEF_ACTION(Action.HOLD_DECELERATING, function(m: Mario)
 		m:AdjustSoundForSpeed()
 		m.ParticleFlags:Add(ParticleFlags.DUST)
 	else
-		local accel = math.min(m.ForwardVel * 0x10000, 0x1000)
+		local accel = math.max(m.ForwardVel * 0x10000, 0x1000)
 		m:SetAnimationWithAccel(Animations.WALK_WITH_LIGHT_OBJ, accel)
 		playStepSound(m, 12, 62)
 	end
