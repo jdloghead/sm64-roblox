@@ -112,7 +112,7 @@ local function clipMario(m: Mario, nextPos: Vector3, heightOff: number?): Vector
 				maybeNextPos = Util.SetY(nextClip.Position + (nextClip.Normal * 5), nextPos.Y)
 			elseif math.abs(normalY) >= 0.01 then
 				if (normalY >= 0.01 and not ignoreFloor) or (normalY <= -0.01 and not ignoreCeil) then
-					local dir = 32 * math.sign(normalY)
+					local dir = 16 * math.sign(normalY)
 					maybeNextPos = Util.SetY(nextClip.Position, nextPos.Y + dir)
 				end
 			end
@@ -122,7 +122,7 @@ local function clipMario(m: Mario, nextPos: Vector3, heightOff: number?): Vector
 		-- so steep floor angles can be detected. This intentionally keeps the de-facto speed
 		-- behavior intact.
 		local slopeDisplaceApplicable = math.abs(m.Position.Y - m.FloorHeight) < 1.0
-		local surfNormal = m.Floor and m.Floor.Normal or Vector3.one
+		local surfNormal = m.Floor and m.Floor.Normal or Vector3.yAxis
 		local surfAngle = m.FloorAngle
 
 		if math.abs(surfNormal.Y) < 0.8 and slopeDisplaceApplicable then
@@ -2209,6 +2209,7 @@ function Mario.ExecuteAction(m: Mario): number
 	m:ProcessInteractions()
 
 	if m.Floor == nil then
+		m.GfxAngle = Vector3int16.new(0, m.FaceAngle.Y, 0)
 		return 0
 	end
 

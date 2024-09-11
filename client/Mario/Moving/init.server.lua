@@ -1,5 +1,12 @@
 --!strict
 
+----------------------------------------------FLAGS------------------------------------------------
+-- Makes Mario turn faster and get slowed down when in Action.WALKING and the analog stick is
+-- held back a bit, to prevent inconvenient turns. (e.g walking off a platform because Mario
+-- didn't do insta-turning)
+local FFLAG_FAST_TURNING = false
+---------------------------------------------------------------------------------------------------
+
 local System = require(script.Parent)
 local Animations = System.Animations
 local Sounds = System.Sounds
@@ -545,9 +552,10 @@ local function shouldBeginSliding(m: Mario)
 	return false
 end
 
-local function analogStickHeldBack(m: Mario)
+local function analogStickHeldBack(m: Mario, radius: number?)
+	local radius: number = tonumber(radius) or 0x471C
 	local intendedDYaw = Util.SignedShort(m.IntendedYaw - m.FaceAngle.Y)
-	return math.abs(intendedDYaw) > 0x471C
+	return math.abs(intendedDYaw) > radius
 end
 
 local function checkGroundDiveOrPunch(m: Mario)
@@ -1037,6 +1045,17 @@ DEF_ACTION(Action.WALKING, function(m: Mario)
 
 	if analogStickHeldBack(m) and m.ForwardVel >= 16 then
 		return m:SetAction(Action.TURNING_AROUND)
+	elseif FFLAG_FAST_TURNING and analogStickHeldBack(m, 0x2000) then
+		if m.ForwardVel > -4.0 and m.ForwardVel <= 12.0 then
+			-- Slow down depending on face angle difference
+			local dYaw = Util.AbsAngleDiff(m.FaceAngle.Y, m.IntendedYaw)
+			m.ForwardVel *= math.min((Util.Coss(dYaw) + 1.0) / 2.0, 1)
+
+			-- Fast turn
+			local currY = Util.SignedShort(m.IntendedYaw - m.FaceAngle.Y)
+			local faceY = m.IntendedYaw - Util.ApproachInt(currY, 0, 0x1000)
+			m.FaceAngle = Util.SetY(m.FaceAngle, faceY)
+		end
 	end
 
 	if m.Input:Has(InputFlags.Z_PRESSED) then
