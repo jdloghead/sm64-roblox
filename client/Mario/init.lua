@@ -10,7 +10,8 @@ local FFLAG_DEGREELESSNESS_MODE = false
 -- the StationaryGroundStep function does not check for wall collisions in
 -- certain conds. if you have weird geometry or pushing walls, keep this on
 local FFLAG_SGS_ALWAYS_PERFORMS_STEPS = true
--- fixes wallcucking (See https://youtu.be/TSCzC-WECw8?t=42)
+-- fixes wallcucking, by picking the best wall depending on Mario's
+-- face angle. (See https://youtu.be/TSCzC-WECw8?t=42)
 local FFLAG_FIX_WALLCUCKING = false
 -- instead of quarter-step with no verification, it will be a single step,
 -- then fire a ray between old position and next position to avoid clipping

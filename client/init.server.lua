@@ -817,15 +817,14 @@ local function update(dt: number)
 					animator:SetAttribute("AnimSetFrame", 0)
 				end
 			end
-
-			if activeTrack then
-				local speed = mario.AnimAccel / 0x10000
-				speed = if speed > 0 then speed * simSpeed else simSpeed
-				activeTrack:AdjustSpeed(simSpeed)
-			end
-
 			mario.AnimDirty = false
 			mario.AnimReset = false
+		end
+
+		if activeTrack then
+			local speed = mario.AnimAccel / 0x10000
+			speed = if speed > 0 then speed * simSpeed else simSpeed
+			activeTrack:AdjustSpeed(speed)
 		end
 
 		if activeTrack and mario.AnimSetFrame > -1 then
