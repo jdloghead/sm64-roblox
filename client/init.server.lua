@@ -7,6 +7,8 @@ local FFLAG_AUTO_RESET_ON_DEAD = true
 local FFLAG_USE_SPAWNLOCATIONS = false
 -- If the rendered character shouldn't have the position interpolated between frames
 local FFLAG_NO_INTERP = false
+-- If the update deltatime surpasses (1 / x), don't go higher. Default is the 10FPS interval.
+local FFLAG_DELTA_MAX = 1 / 10
 ---------------------------------------------------------------------------------------------------
 
 local Core = script.Parent
@@ -15,7 +17,7 @@ if Core:GetAttribute("HotLoading") then
 	task.wait(3)
 end
 
-for i, desc in script:GetDescendants() do
+for _, desc in script:GetDescendants() do
 	if desc:IsA("BaseScript") then
 		desc.Enabled = true
 	end
@@ -604,6 +606,7 @@ local function onReset()
 	local char = player.Character
 
 	if char then
+		local rootPart = char:FindFirstChild("HumanoidRootPart")
 		local reset = char:FindFirstChild("Reset")
 
 		local cf = CFrame.new(roblox) * Util.ToRotation(mario.FaceAngle)
@@ -614,6 +617,14 @@ local function onReset()
 
 		if reset and reset:IsA("RemoteEvent") then
 			reset:FireServer()
+		end
+
+		if rootPart then
+			for _, child: Instance in pairs(rootPart:GetChildren()) do
+				if child:IsA("Sound") and child.Name:sub(1, 5) == "MARIO" then
+					child:Destroy()
+				end
+			end
 		end
 	end
 
@@ -652,7 +663,7 @@ local function update(dt: number)
 	local now = os.clock()
 	-- local dt = math.min(dt, 0.1)
 	local gfxRot = CFrame.identity
-	local scale = character:GetScale()
+	local scale = tonumber(character:GetAttribute("Scale")) or character:GetScale()
 
 	if scale ~= activeScale then
 		local marioPos = Util.ToRoblox(mario.Position)
@@ -678,7 +689,7 @@ local function update(dt: number)
 	Util.DebugCollisionFaces(mario.Wall, mario.Ceil, mario.Floor)
 	Util.DebugWater(mario.WaterLevel)
 
-	subframe += math.min(now - lastUpdate, 1 / 30) * (STEP_RATE * simSpeed)
+	subframe += math.min(now - lastUpdate, FFLAG_DELTA_MAX) * (STEP_RATE * simSpeed)
 	lastUpdate = now
 
 	--! This code interferes with obtaining the caps normally.
@@ -707,8 +718,16 @@ local function update(dt: number)
 		updateController(mario.Controller, humanoid)
 		mario:ExecuteAction()
 
+		-- Mario code updates MarioState's versions of position etc, so we need
+		-- to sync it with the Mario object
+		local marioObj = (mario :: any).MarioObj
+		if marioObj then
+			mario:CopyMarioStateToObject(marioObj)
+		end
+
 		local gfxPosOffset = Util.ToRoblox(mario.GfxPos)
 		local gfxPos = Util.ToRoblox(mario.Position) + gfxPosOffset
+		local throwPos = Util.ToRoblox((mario.ThrowMatrix or CFrame.identity).Position)
 		gfxRot = Util.ToRotation(mario.GfxAngle)
 
 		mario.GfxPos = Vector3.zero
@@ -717,27 +736,40 @@ local function update(dt: number)
 		prevCF = goalCF
 		goalCF = CFrame.new(gfxPos) * FLIP * gfxRot
 
-		local devCameraOffset = Vector3.zero
-		if humanoid then
-			devCameraOffset = humanoid:GetAttribute("CameraOffset") or devCameraOffset
+		local devCameraOffset = if humanoid
+			then (humanoid:GetAttribute("CameraOffset") or Vector3.zero)
+			else Vector3.zero
+		local thisGoalCamOffset = -gfxPosOffset + devCameraOffset
+
+		if throwPos.Magnitude > 0 then
+			local throwDisplace = Util.ToRoblox(mario.Position) - throwPos
+			thisGoalCamOffset += throwDisplace
 		end
 
 		prevCameraOffset = goalCameraOffset
-		goalCameraOffset = -gfxPosOffset + devCameraOffset
+		goalCameraOffset = thisGoalCamOffset
 	end
 
 	-- Auto reset logic (Optional)
 	-- Remove if you have your own solutions
 	if FFLAG_AUTO_RESET_ON_DEAD then
-		local action = mario.Action()
-
 		--stylua: ignore
-		local isDead = mario.Health < 0x100 or (
-			action == Action.QUICKSAND_DEATH
-		)
+		local function isDead(): boolean
+			local action = mario.Action()
+			return mario.Health < 0x100 or (
+				(action == Action.QUICKSAND_DEATH and mario.QuicksandDepth >= 100)
+			)
+		end
 
-		if isDead and not autoResetThread then
-			autoResetThread = task.delay(3, onReset)
+		if isDead() and not autoResetThread then
+			autoResetThread = task.delay(3, function()
+				if isDead() then
+					return onReset()
+				end
+
+				pcall(task.cancel, autoResetThread)
+				autoResetThread = nil :: any
+			end)
 		end
 	end
 
@@ -745,6 +777,7 @@ local function update(dt: number)
 		local cf = character:GetPivot()
 		local rootPart = character.PrimaryPart
 		local animator = character:FindFirstChildWhichIsA("Animator", true)
+		local isExternalAnims = (humanoid and humanoid:HasTag("HandleAnimsExternally"))
 
 		if animator and (mario.AnimDirty or mario.AnimReset) and mario.AnimFrame >= 0 then
 			local anim = mario.AnimCurrent
@@ -754,6 +787,7 @@ local function update(dt: number)
 				if tostring(activeTrack.Animation) == "TURNING_PART1" then
 					if anim and anim.Name == "TURNING_PART2" then
 						mario.AnimSkipInterp = 2
+						mario.AnimSetFrame = 0
 						animSpeed *= 2
 					end
 				end
@@ -772,22 +806,22 @@ local function update(dt: number)
 				end
 
 				local track = loadedAnims[anim.Name] or animator:LoadAnimation(anim)
-				track:Play(animSpeed, 1, 0)
 				activeTrack = track
 
-				if not loadedAnims[anim.Name] then
-					loadedAnims[anim.Name] = track
+				if not isExternalAnims then
+					if not loadedAnims[anim.Name] then
+						loadedAnims[anim.Name] = track
+					end
+					track:Play(animSpeed, 1, 0)
+				else
+					animator:SetAttribute("AnimSetFrame", 0)
 				end
 			end
 
 			if activeTrack then
 				local speed = mario.AnimAccel / 0x10000
-
-				if speed > 0 then
-					activeTrack:AdjustSpeed(speed * simSpeed)
-				else
-					activeTrack:AdjustSpeed(simSpeed)
-				end
+				speed = if speed > 0 then speed * simSpeed else simSpeed
+				activeTrack:AdjustSpeed(simSpeed)
 			end
 
 			mario.AnimDirty = false
@@ -795,6 +829,10 @@ local function update(dt: number)
 		end
 
 		if activeTrack and mario.AnimSetFrame > -1 then
+			if isExternalAnims and animator then
+				animator:SetAttribute("AnimSetFrame", mario.AnimSetFrame)
+			end
+
 			activeTrack.TimePosition = mario.AnimSetFrame / STEP_RATE
 			mario.AnimSetFrame = -1
 		end
@@ -881,11 +919,11 @@ local function update(dt: number)
 				setDebugStat("Inertia", mario.Inertia)
 
 				-- setDebugStat("HasHeldObj", ((mario :: any).HeldObj ~= nil) and TRUE_TEXT or FALSE_TEXT)
-			end
 
-			for _, name in AUTO_STATS do
-				local value = rawget(mario :: any, name)
-				setDebugStat(name, value)
+				for _, name in AUTO_STATS do
+					local value = rawget(mario :: any, name)
+					setDebugStat(name, value)
+				end
 			end
 
 			if alignPos then
@@ -967,13 +1005,18 @@ local function update(dt: number)
 end
 
 reset.Event:Connect(onReset)
-RunService.Heartbeat:Connect(update)
 shared.LocalMario = mario
 
 player.CharacterAdded:Connect(function()
 	-- Reset loaded animations if a new character
 	-- has been loaded/replaced to
 	table.clear(loadedAnims)
+end)
+
+RunService.Heartbeat:Connect(function(dt: number)
+	debug.profilebegin("SM64::update")
+	update(dt)
+	debug.profileend()
 end)
 
 while true do

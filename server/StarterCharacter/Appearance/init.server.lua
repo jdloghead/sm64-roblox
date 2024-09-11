@@ -81,10 +81,12 @@ character.DescendantAdded:Connect(onDescendantAdded)
 character.DescendantRemoving:Connect(onDescendantRemoving)
 
 local function reload()
-	character:ScaleTo(1)
+	if (tonumber(character:GetAttribute("Scale"))) == nil then
+		character:ScaleTo(1)
+	end
 
 	task.spawn(function()
-		for i = 1, 5 do
+		for _ = 1, 5 do
 			character:PivotTo(CFrame.new(0, 100, 0))
 			task.wait()
 		end
@@ -126,7 +128,10 @@ local function reload()
 		assert(rootPart, "No HumanoidRootPart??")
 
 		local particles = rootPart:FindFirstChild("Particles")
-		humanoid:ApplyDescription(hDesc)
+
+		if not humanoid:HasTag("IgnoreCharAppearance") then
+			humanoid:ApplyDescription(hDesc)
+		end
 
 		if particles and particles:IsA("Attachment") then
 			local floorDec = humanoid.HipHeight + (rootPart.Size.Y / 2)

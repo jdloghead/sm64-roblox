@@ -1,0 +1,12 @@
+--!strict
+
+return {
+	ATTACK = 1,
+	GROUND_POUND = 2,
+	SMALL_DAMAGE = 3,
+	MED_DAMAGE = 4,
+	LARGE_DAMAGE = 5,
+	HIT_FROM_BELOW = 8,
+	FALL_DAMAGE = 9,
+	SHOCK = 10,
+}

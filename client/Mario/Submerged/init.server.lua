@@ -868,8 +868,7 @@ DEF_ACTION(Action.WATER_SHELL_SWIMMING, function(m: Mario)
 	end
 
 	m.ActionTimer += 1
-
-	if m.ActionTimer == 240 then
+	if m.ActionTimer == 240 and heldObj then
 		(m :: any).HeldObj.InteractStatus = InteractionStatus.STOP_RIDING;
 		(m :: any).HeldObj = nil
 		-- stop_shell_music()

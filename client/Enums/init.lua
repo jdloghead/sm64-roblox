@@ -42,6 +42,13 @@ local Enums = {
 		Method = require(script.Interaction.Method),
 		Type = require(script.Interaction.Type),
 	}),
+
+	Camera = table.freeze({
+		Shake = require(script.Camera.Shake),
+		Flag = require(script.Camera.Flag),
+		Mode = require(script.Camera.Mode),
+		Move = require(script.Camera.Move),
+	}),
 }
 
 local nameIndex: { [any]: { [number]: string } } = {}

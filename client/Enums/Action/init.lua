@@ -247,4 +247,7 @@ return {
 	PICKING_UP_BOWSER = 0x00000390, -- (0x190 | FLAG_STATIONARY)
 	HOLDING_BOWSER = 0x00000391, -- (0x191 | FLAG_STATIONARY)
 	RELEASING_BOWSER = 0x00000392, -- (0x192 | FLAG_STATIONARY)
+
+	-- any group: custom actions not in vanilla SM64
+	WALL_SLIDE = 0x000008BF, -- (0x0BF | ACT_FLAG_AIR) (MorsGames/sm64plus) (group 0x080: airborne actions)
 }

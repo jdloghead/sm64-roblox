@@ -4,6 +4,11 @@ local Util = {
 	Scale = 1 / 20,
 }
 
+----------------------------------------------FLAGS------------------------------------------------
+-- Don't show debug long raycasts that hit nothing
+local FFLAG_RAY_DBG_IGNORE_LONG_NIL = false
+----------------------------------------------------------------------------------------------------
+
 local CollectionService = game:GetService("CollectionService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
@@ -14,11 +19,6 @@ local Enums = require(Core.Client.Enums)
 local SpawnPicker: () -> SpawnLocation? = require(script.SpawnPicker)
 
 local SurfaceClass = Enums.SurfaceClass
-
-----------------------------------------------FLAGS------------------------------------------------
--- Don't show debug long raycasts that hit nothing
-local FFLAG_RAY_DBG_IGNORE_LONG_NIL = false
-----------------------------------------------------------------------------------------------------
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Helpers
@@ -238,6 +238,30 @@ function Util.ToRotation(v: Vector3int16): CFrame
 	return matrix
 end
 
+function Util.Vec3GetDistAndAngle(
+	from: Vector3,
+	to: Vector3,
+	dist: number,
+	pitch: number,
+	yaw: number
+): (number, number, number)
+	local x, y, z = to.X - from.X, to.Y - from.Y, to.Z - from.Z
+
+	dist = math.sqrt(x * x + y * y + z * z)
+	pitch = Util.Atan2s(math.sqrt(x * x + z * z), y)
+	yaw = Util.Atan2s(z, x)
+
+	return dist, pitch, yaw
+end
+
+function Util.Vec3SetDistAndAngle(from: Vector3, to: Vector3, dist: number, pitch: number, yaw: number): Vector3
+	return Vector3.new(
+		from.X + dist * Util.Coss(pitch) * Util.Sins(yaw),
+		from.Y + dist * Util.Sins(pitch),
+		from.Z + dist * Util.Coss(pitch) * Util.Coss(yaw)
+	)
+end
+
 -- Returns Pitch, Yaw and Roll from a CFrame in Signed 16-bit int format.
 function Util.CFrameToSM64Angles(cframe: CFrame): (number, number, number)
 	local lookVector = cframe.LookVector
@@ -404,7 +428,7 @@ function Util.FindFloor(pos: Vector3, dir: Vector3?): (number, RaycastResult?)
 	local result
 	local unqueried: { [BasePart]: any } = {}
 
-	for i = 1, 2 do
+	for _ = 1, 2 do
 		result = Util.RaycastSM64(newPos + (Vector3.yAxis * 100), dir, rayParams, workspace)
 		local _, ignored = shouldIgnoreSurface(result, "Floor")
 		local hit: BasePart? = result and (result.Instance :: BasePart)
@@ -505,6 +529,7 @@ end
 
 function Util.GetFloorType(floor: RaycastResult?): number
 	local instance: BasePart? = floor and floor.Instance :: BasePart
+	local surfaceIsHard = instance and instance:HasTag("HardSurface")
 
 	if floor and instance then
 		local material: Enum.Material = instance.Material
@@ -534,7 +559,7 @@ function Util.GetFloorType(floor: RaycastResult?): number
 		end
 	end
 
-	return 0
+	return surfaceIsHard and SurfaceClass.HARD or SurfaceClass.DEFAULT
 end
 
 function Util.GetCeilType(ceil: RaycastResult?): number
@@ -710,6 +735,20 @@ function Util.ApproachShort(current: number, target: number, inc: number): numbe
 	end
 
 	return Util.SignedShort(current)
+end
+
+function Util.AbsAngleDiff(x0: number, x1: number): number
+	local diff = Util.SignedShort(x1 - x0)
+
+	if diff == -0x8000 then
+		diff = -0x7FFF
+	end
+
+	if diff < 0 then
+		diff = -diff
+	end
+
+	return diff
 end
 
 function Util.Sins(short: number): number

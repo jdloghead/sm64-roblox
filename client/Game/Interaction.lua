@@ -24,12 +24,13 @@ local InputFlags = Enums.InputFlags
 local MarioFlags = Enums.MarioFlags
 local ParticleFlags = Enums.ParticleFlags
 
-local InteractionEnums = Enums.Interaction
-local InteractionType = InteractionEnums.Type
-local AttackType = InteractionEnums.AttackType
-local InteractionStatus = InteractionEnums.Status
-local InteractionMethod = InteractionEnums.Method
-local InteractionSubtype = InteractionEnums.Subtype
+local InteractionType = Enums.Interaction.Type
+local AttackType = Enums.Interaction.AttackType
+local InteractionStatus = Enums.Interaction.Status
+local InteractionMethod = Enums.Interaction.Method
+local InteractionSubtype = Enums.Interaction.Subtype
+
+local CameraShake = Enums.Camera.Shake
 
 type Mario = Mario.Mario
 
@@ -279,14 +280,12 @@ end
 local function takeDamageFromInteractObject(m: Mario, o: Object): number
 	local damage = math.floor(tonumber(o.DamageOrCoinValue) or 0)
 
-	--[[local shake = 3
+	local shake = CameraShake.SMALL_DAMAGE
 	if damage >= 4 then
-		shake = 5 -- SHAKE_LARGE_DAMAGE
+		shake = CameraShake.LARGE_DAMAGE
 	elseif damage >= 2 then
-		shake = 4 -- SHAKE_MED_DAMAGE
-	else
-		shake = 3 -- SHAKE_SMALL_DAMAGE
-	end]]
+		shake = CameraShake.MED_DAMAGE
+	end
 
 	if not m.Flags:Has(MarioFlags.CAP_ON_HEAD) then
 		damage += (damage + 1) / 2
@@ -904,9 +903,7 @@ end
 
 function Interaction.InteractPole(m: Mario, o: Object): boolean
 	preparePseudoObject(o)
-
 	local oPos = o.Position
-
 	local actionId = bit32.band(m.Action(), 0x1FF)
 
 	if actionId >= 0x080 and actionId < 0x0A0 then
@@ -1103,6 +1100,7 @@ Interaction.InteractionHandlers = {
 	{ InteractionMethod.KOOPA_SHELL, Interaction.InteractKoopaShell },
 	{ InteractionMethod.GRABBABLE, Interaction.InteractGrabbable },
 	{ InteractionMethod.STAR_OR_KEY, Interaction.InteractStarOrKey },
+	{ InteractionMethod.MR_BLIZZARD, Interaction.InteractDamage },
 } :: { { any } }
 
 return Interaction

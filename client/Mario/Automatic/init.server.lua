@@ -149,20 +149,6 @@ local function playClimbingSounds(m: Mario, b: number)
 	end
 end
 
-local function absAngleDiff(x0: number, x1: number): number
-	local diff = Util.SignedShort(x1 - x0)
-
-	if diff == -0x8000 then
-		diff = -0x7FFF
-	end
-
-	if diff < 0 then
-		diff = -diff
-	end
-
-	return diff
-end
-
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Actions
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -170,7 +156,7 @@ end
 local DEF_ACTION: (number, (Mario) -> boolean) -> () = System.RegisterAction
 
 DEF_ACTION(Action.LEDGE_GRAB, function(m: Mario)
-	local intendedDYaw = m.IntendedYaw - m.FaceAngle.Y
+	local intendedDYaw = Util.SignedShort(m.IntendedYaw - m.FaceAngle.Y)
 	local hasSpaceForMario = m.CeilHeight - m.FloorHeight >= 160
 
 	if m.ActionTimer < 10 then
@@ -280,7 +266,7 @@ local function updateHangMoving(m: Mario)
 
 	if FFLAG_BETTER_HANGING then
 		local turnRange = 0x800
-		local dYaw = absAngleDiff(m.FaceAngle.Y, m.IntendedYaw) -- 0x0 is turning forwards, 0x8000 is turning backwards
+		local dYaw = Util.AbsAngleDiff(m.FaceAngle.Y, m.IntendedYaw) -- 0x0 is turning forwards, 0x8000 is turning backwards
 
 		if m.ForwardVel < 0.0 then -- Don't modify Mario's speed and turn radius if Mario is moving backwards
 			-- Flip controls when moving backwards so Mario still moves towards intendedYaw

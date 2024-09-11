@@ -324,16 +324,16 @@ local function updateSliding(m: Mario, stopSpeed: number)
 	local lossFactor
 	local accel
 
-	if floorClass == SurfaceClass.VERY_SLIPPERY then
+	if floorClass == SurfaceClass.VERY_SLIPPERY or floorClass == SurfaceClass.HARD_VERY_SLIPPERY then
 		accel = 10
 		lossFactor = m.IntendedMag / 32 * forward * 0.02 + 0.98
-	elseif floorClass == SurfaceClass.SLIPPERY then
+	elseif floorClass == SurfaceClass.SLIPPERY or floorClass == SurfaceClass.HARD_SLIPPERY then
 		accel = 8
 		lossFactor = m.IntendedMag / 32 * forward * 0.02 + 0.96
-	elseif floorClass == SurfaceClass.DEFAULT then
+	elseif floorClass == SurfaceClass.DEFAULT or floorClass == SurfaceClass.HARD then
 		accel = 7
 		lossFactor = m.IntendedMag / 32 * forward * 0.02 + 0.92
-	elseif floorClass == SurfaceClass.NOT_SLIPPERY then
+	elseif floorClass == SurfaceClass.NOT_SLIPPERY or floorClass == SurfaceClass.HARD_NOT_SLIPPERY then
 		accel = 5
 		lossFactor = m.IntendedMag / 32 * forward * 0.02 + 0.92
 	end
@@ -388,11 +388,11 @@ local function applySlopeAccel(m: Mario)
 			end
 		end
 
-		if slopeClass == SurfaceClass.VERY_SLIPPERY then
+		if slopeClass == SurfaceClass.VERY_SLIPPERY or slopeClass == SurfaceClass.HARD_VERY_SLIPPERY then
 			slopeAccel = 5.3
-		elseif slopeClass == SurfaceClass.SLIPPERY then
+		elseif slopeClass == SurfaceClass.SLIPPERY or slopeClass == SurfaceClass.HARD_SLIPPERY then
 			slopeAccel = 2.7
-		elseif slopeClass == SurfaceClass.DEFAULT then
+		elseif slopeClass == SurfaceClass.DEFAULT or slopeClass == SurfaceClass.HARD then
 			slopeAccel = 1.7
 		else
 			slopeAccel = 0
@@ -471,13 +471,13 @@ local function applySlopeDecel(m: Mario, decelCoef: number)
 	local stopped = false
 	local floorClass = m:GetFloorClass()
 
-	if floorClass == SurfaceClass.VERY_SLIPPERY then
+	if floorClass == SurfaceClass.VERY_SLIPPERY or floorClass == SurfaceClass.HARD_VERY_SLIPPERY then
 		decel = decelCoef * 0.2
-	elseif floorClass == SurfaceClass.SLIPPERY then
+	elseif floorClass == SurfaceClass.SLIPPERY or floorClass == SurfaceClass.HARD_SLIPPERY then
 		decel = decelCoef * 0.7
-	elseif floorClass == SurfaceClass.DEFAULT then
+	elseif floorClass == SurfaceClass.DEFAULT or floorClass == SurfaceClass.HARD then
 		decel = decelCoef * 2
-	elseif floorClass == SurfaceClass.NOT_SLIPPERY then
+	elseif floorClass == SurfaceClass.NOT_SLIPPERY or floorClass == SurfaceClass.HARD_NOT_SLIPPERY then
 		decel = decelCoef * 3
 	end
 
@@ -1257,6 +1257,7 @@ DEF_ACTION(Action.FINISH_TURNING_AROUND, function(m: Mario)
 		m.AnimSkipInterp = 2
 	end
 
+	-- m.GfxAngle += Vector3int16.new(0, 0x8000, 0)
 	return false
 end)
 

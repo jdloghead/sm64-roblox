@@ -51,6 +51,8 @@ local AirStep = Enums.AirStep
 local HangStep = Enums.HangStep
 local GroundStep = Enums.GroundStep
 
+local InteractionStatus = Enums.Interaction.Status
+
 export type BodyState = Types.BodyState
 export type Controller = Types.Controller
 export type MarioState = Types.MarioState
@@ -61,33 +63,24 @@ export type Flags = Types.Flags
 export type Class = Mario
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- HELPERS
+-- VARIABLES
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 local SHORT_TO_RAD = (2 * math.pi) / 0x10000
+local sMovingSandSpeeds = { 12, 8, 4, 0 }
 local Vector3XZ = Vector3.new(1, 0, 1)
 local RAD90 = (math.pi / 2)
 
-local function absAngleDiff(x0: number, x1: number): number
-	local diff = Util.SignedShort(x1 - x0)
-
-	if diff == -0x8000 then
-		diff = -0x7FFF
-	end
-
-	if diff < 0 then
-		diff = -diff
-	end
-
-	return diff
-end
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- HELPERS
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 local function solveBestWallFromAngle(walls: { RaycastResult }, angle: number): RaycastResult?
 	local angleDiffStore = math.huge
 	local best: RaycastResult?
 
 	for _, wall in ipairs(walls) do
-		local angleDiff = absAngleDiff(Util.SignedShort(angle - 0x8000), Util.Atan2s(wall.Normal.Z, wall.Normal.X))
+		local angleDiff = Util.AbsAngleDiff(Util.SignedShort(angle - 0x8000), Util.Atan2s(wall.Normal.Z, wall.Normal.X))
 
 		if angleDiff < angleDiffStore then
 			angleDiffStore = angleDiff
@@ -98,13 +91,13 @@ local function solveBestWallFromAngle(walls: { RaycastResult }, angle: number): 
 	return best
 end
 
-local function solveContinuousClip(m: Mario, nextPos: Vector3, heightOff: number?): Vector3
+local function clipMario(m: Mario, nextPos: Vector3, heightOff: number?): Vector3
 	if FFLAG_CONTINUOUS_INSTEAD_OF_QSTEP then
 		local heightOffset: number = (tonumber(heightOff) or 0)
 		local origin = m.Position + (Vector3.yAxis * heightOffset)
 		local delta = nextPos - m.Position
 
-		local nextClip = Util.RaycastSM64(origin, delta)
+		local nextClip = delta.Magnitude > 0.01 and Util.RaycastSM64(origin, delta)
 		local maybeNextPos = nextPos
 
 		if nextClip then
@@ -117,13 +110,16 @@ local function solveContinuousClip(m: Mario, nextPos: Vector3, heightOff: number
 			if not ignoreWall and (math.abs(normalY) < 0.01) then
 				maybeNextPos = Util.SetY(nextClip.Position + (nextClip.Normal * 5), nextPos.Y)
 			elseif math.abs(normalY) >= 0.01 then
-				local dir = 5 * math.sign(normalY)
-				maybeNextPos = Util.SetY(nextClip.Position, nextPos.Y + dir)
+				if (normalY >= 0.01 and not ignoreFloor) or (normalY <= -0.01 and not ignoreCeil) then
+					local dir = 32 * math.sign(normalY)
+					maybeNextPos = Util.SetY(nextClip.Position, nextPos.Y + dir)
+				end
 			end
 		end
 
-		-- Move maybeNextPos up/down depending on the angle we're looking at from the normal
-		-- so steep floor angles can be detected
+		-- Move maybeNextPos up/down depending on the angle we're looking at from the normal,
+		-- so steep floor angles can be detected. This intentionally keeps the de-facto speed
+		-- behavior intact.
 		local slopeDisplaceApplicable = math.abs(m.Position.Y - m.FloorHeight) < 1.0
 		local surfNormal = m.Floor and m.Floor.Normal or Vector3.one
 		local surfAngle = m.FloorAngle
@@ -139,11 +135,37 @@ local function solveContinuousClip(m: Mario, nextPos: Vector3, heightOff: number
 	return nextPos
 end
 
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- VARIABLES
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+local function solveContinuousClip(m: Mario, nextPos: Vector3, heightOff: number): Vector3
+	if not FFLAG_CONTINUOUS_INSTEAD_OF_QSTEP then
+		return nextPos
+	end
 
-local sMovingSandSpeeds = { 12, 8, 4, 0 }
+	local maybeNextPos = nextPos
+	local delta = nextPos - m.Position
+
+	-- We wish to move as much as possible, so we need to cut the travel
+	-- distance if there was no floor found.
+	-- This should always be successful first attempt, unless you have
+	-- a really high amount of forward velocity.
+	for i = 1, 0.25, -0.25 do
+		local travelDist = (delta * i)
+
+		-- Ignore short
+		if travelDist.Magnitude < 64 and i ~= 1 then
+			break
+		end
+
+		local clipped = clipMario(m, m.Position + travelDist, heightOff)
+		local _, floorHere = Util.FindFloor(clipped)
+
+		if floorHere then
+			maybeNextPos = clipped
+			break
+		end
+	end
+
+	return maybeNextPos
+end
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- BINDINGS
@@ -173,8 +195,9 @@ function Mario.IsAnimAtEnd(m: Mario): boolean
 	return m.AnimFrame >= m.AnimFrameCount
 end
 
-function Mario.IsAnimPastEnd(m: Mario): boolean
-	return m.AnimFrame >= m.AnimFrameCount - 2
+function Mario.IsAnimPastEnd(m: Mario, sub: number?): boolean
+	local sub: number = tonumber(sub) or 2
+	return m.AnimFrame >= m.AnimFrameCount - sub
 end
 
 function Mario.SetAnimation(m: Mario, anim: Animation): number
@@ -417,25 +440,28 @@ end
 
 function Mario.GetFloorClass(m: Mario): number
 	local floor = m.Floor
+	local hit = floor and floor.Instance
 
-	if floor then
-		local hit = floor.Instance
+	if hit then
+		if FFLAG_FLOOR_NEVER_SLIPPERY then
+			return SurfaceClass.NOT_SLIPPERY
+		end
 
 		if hit and hit:IsA("BasePart") then
-			if FFLAG_FLOOR_NEVER_SLIPPERY then
-				return SurfaceClass.DEFAULT
-			end
-
+			local surfaceIsHard = hit:HasTag("HardSurface")
 			local physics = hit.CurrentPhysicalProperties
 			local friction = physics.Friction
 
+			local hard = surfaceIsHard and "HARD_" or ""
 			if friction <= 0.025 then
-				return SurfaceClass.VERY_SLIPPERY
+				return SurfaceClass[`{hard}VERY_SLIPPERY`]
 			elseif friction <= 0.5 then
-				return SurfaceClass.SLIPPERY
+				return SurfaceClass[`{hard}SLIPPERY`]
 			elseif friction >= 0.9 then
-				return SurfaceClass.NOT_SLIPPERY
+				return SurfaceClass[`{hard}NOT_SLIPPERY`]
 			end
+
+			return surfaceIsHard and SurfaceClass.HARD or SurfaceClass.DEFAULT
 		end
 	end
 
@@ -444,6 +470,8 @@ end
 
 function Mario.GetTerrainType(m: Mario): number
 	local floor = m.Floor
+	local hit = floor and floor.Hit
+	local surfaceIsHard = hit and hit:HasTag("HardSurface")
 
 	if floor then
 		local material = floor.Material
@@ -454,7 +482,7 @@ function Mario.GetTerrainType(m: Mario): number
 		end
 	end
 
-	return TerrainType.DEFAULT
+	return surfaceIsHard and TerrainType.HARD or TerrainType.DEFAULT
 end
 
 function Mario.GetFloorType(m: Mario, other: RaycastResult?): number
@@ -924,7 +952,7 @@ function Mario.UpdatePunchSequence(m: Mario)
 		end
 
 		m:SetAnimation(Animations.FIRST_PUNCH)
-		m.ActionArg = m:IsAnimPastEnd() and 2 or 1
+		m.ActionArg = m:IsAnimPastEnd(0) and 2 or 1
 
 		if m.AnimFrame >= 2 then
 			if m:CheckObjectGrab() then
@@ -953,7 +981,7 @@ function Mario.UpdatePunchSequence(m: Mario)
 		end
 
 		m:SetAnimation(Animations.SECOND_PUNCH)
-		m.ActionArg = m:IsAnimPastEnd() and 5 or 4
+		m.ActionArg = m:IsAnimPastEnd(0) and 5 or 4
 
 		if m.AnimFrame > 0 then
 			m.Flags:Add(MarioFlags.PUNCHING)
@@ -1135,7 +1163,6 @@ end
 
 function Mario.PerformGroundQuarterStep(m: Mario, nextPos: Vector3): number
 	nextPos = solveContinuousClip(m, nextPos, 60)
-
 	local lowerPos = Util.FindWallCollisions(nextPos, 30, 24)
 	nextPos = lowerPos
 
@@ -1267,7 +1294,6 @@ end
 
 function Mario.PerformAirQuarterStep(m: Mario, intendedPos: Vector3, stepArg: number)
 	local nextPos = solveContinuousClip(m, intendedPos, 75)
-
 	local upperPos, upperWall, allWalls = Util.FindWallCollisions(nextPos, 150, 50)
 	nextPos = upperPos
 
@@ -1454,6 +1480,9 @@ function Mario.ApplyGravity(m: Mario)
 				m.Velocity = Util.SetY(m.Velocity, -37.5)
 			end
 		end
+	elseif action == Action.WALL_SLIDE then
+		m.Velocity -= (Vector3.yAxis * 1)
+		-- The function for Action.WALL_SLIDE already caps
 	else
 		m.Velocity -= (Vector3.yAxis * 4)
 
@@ -2028,9 +2057,9 @@ function Mario.PlayFarFallSound(m: Mario)
 
 	if action() == Action.TWIRLING then
 		return
-	end
-
-	if action() == Action.FLYING then
+	elseif action() == Action.FLYING then
+		return
+	elseif action() == Action.WALL_SLIDE then
 		return
 	end
 
@@ -2221,8 +2250,21 @@ function Mario.ExecuteAction(m: Mario): number
 						if m.WaterLevel - 80 > m.FloorHeight then
 							m.Position = Util.SetY(m.Position, m.WaterLevel - 80)
 						else
+							--! If you press B to throw the shell, there is a ~5 frame window
+							--  where your held object is the shell, but you are not in the
+							--  water shell swimming action. This allows you to hold the water
+							--  shell on land (used for cloning in DDD).
+							if m.Action() == Action.WATER_SHELL_SWIMMING and (m :: any).HeldObj ~= nil then
+								(m :: any).HeldObj.InteractStatus:Set(InteractionStatus.STOP_RIDING);
+								(m :: any).HeldObj = nil
+							end
+
 							m.AngleVel *= 0
-							cancel = m:SetAction(Action.WALKING)
+							if (m :: any).HeldObj == nil then
+								cancel = m:SetAction(Action.WALKING)
+							else
+								cancel = m:SetAction(Action.HOLD_WALKING)
+							end
 						end
 					end
 

@@ -25,6 +25,7 @@ local function isSpawnAvailableFor(player: Player, obj: SpawnLocation): boolean
 	if SpawnNeutral then
 		return true
 	end
+
 	-- If the player is neutral, they cannot spawn on a team spawn
 	-- If the player and spawn are on different teams, they cannot spawn there
 	if PlayerNeutral or (PlayerTeam ~= SpawnTeam) then
@@ -59,9 +60,12 @@ local function addSpawn(part: Instance)
 	WorldSpawns[part] = true
 
 	-- Destroyed check
-	part.AncestryChanged:Connect(function()
+	local connection
+	connection = part.AncestryChanged:Connect(function()
 		if not part:IsDescendantOf(workspace) then
 			WorldSpawns[part] = nil :: any
+			connection:Disconnect()
+			connection = nil :: any
 			return
 		end
 	end)

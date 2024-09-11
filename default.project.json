@@ -4,14 +4,14 @@
     "tree": {
         "$className": "DataModel",
         "$ignoreUnknownInstances": true,
-        
+
         "Workspace": {
             "$className": "Workspace",
             "$ignoreUnknownInstances": true,
 
             "SM64": {
                 "$className": "Folder",
-                
+
                 "$attributes": {
                     "TimeScale": 1,
                     "WingCap": false,

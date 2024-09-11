@@ -261,6 +261,147 @@ export type ObjectHitboxState = {
 	HurtboxHeight: s16,
 }
 
+type PlayerCameraState = {
+	Action: Flags,
+	Position: Vector3,
+	FaceAngle: Vector3,
+	HeadRotation: Vector3,
+
+	CameraEvent: Flags,
+}
+
+export type LakituState = {
+	CurFocus: Vector3,
+	CurPos: Vector3,
+	GoalFocus: Vector3,
+	GoalPos: Vector3,
+
+	Mode: Flags,
+	DefMode: Flags,
+
+	ShakeMagnitude: Vector3,
+
+	ShakePitchPhase: number,
+	ShakePitchVel: number,
+	ShakePitchDecay: number,
+
+	Roll: number,
+	Yaw: number,
+	NextYaw: number,
+	Focus: Vector3,
+	Position: Vector3,
+
+	ShakeRollPhase: number,
+	ShakeRollVel: number,
+	ShakeRollDecay: number,
+	ShakeYawPhase: number,
+	ShakeYawVel: number,
+	ShakeYawDecay: number,
+
+	FocHSpeed: number,
+	FocVSpeed: number,
+
+	PosHSpeed: number,
+	PosVSpeed: number,
+
+	LastFrameAction: number,
+}
+
+type CameraTransition = {
+	Focus: Vector3,
+	Pos: Vector3,
+	Dist: number,
+	Pitch: number,
+	Yaw: number,
+}
+
+type CameraTrackPath = {
+	StartOfPath: number,
+	Pos: Vector3,
+	DistThresh: number,
+	Zoom: number,
+}
+
+export type CameraState = {
+	OldPosition: Vector3,
+	OldFocus: Vector3,
+
+	Pos: Vector3,
+	Focus: Vector3,
+
+	AreaCen: Vector3,
+
+	PlayerCameraState: PlayerCameraState,
+	AvoidYawVel: number,
+	YawAfterDoorCutscene: number,
+	HandheldShakeSpline: {
+		Index: number,
+		Point: Vector3,
+	},
+
+	StatusFlags: Flags,
+	SelectionFlags: Flags,
+	_2ndRotateFlags: Flags,
+	CameraSoundFlags: Flags,
+	CButtonsPressed: Flags,
+
+	CutsceneDialogId: number,
+	LakituState: LakituState,
+
+	AreaYaw: number,
+	AreaYawChange: number,
+
+	LakituDist: number,
+	LakituPitch: number,
+	ZoomAmount: number,
+	CSideButtonYaw: number,
+	BehindMarioSoundTimer: number,
+	ZeroZoomDist: number,
+	CUpCameraPitch: number,
+	ModeOffsetYaw: number,
+
+	SpiralStairsYawOffset: number,
+	s8DirModeBaseYaw: number,
+	s8DirModeYawOffset: number,
+
+	PanDistance: number,
+	CannonYOffset: number,
+
+	Mode: number,
+	ModeInfo: {
+		NewMode: number,
+		LastMode: number,
+		Max: number,
+		Frame: number,
+
+		TransitionStart: CameraTransition,
+		TransitionEnd: CameraTransition,
+	},
+
+	CastleEntranceOffset: Vector3,
+	ParTrackIndex: number,
+
+	ParTrackPath: CameraTrackPath,
+	ParTrackPathTransOff: CameraTrackPath,
+	CameraStoreCUp: CameraTrackPath,
+	CameraStoreCutscene: CameraTrackPath,
+
+	CameraMovementFlags: Flags,
+
+	CutsceneSplineSegment: number,
+	CutsceneSplineSegmentProgress: number,
+	CutsceneShot: number,
+	CutsceneTimer: number,
+	CutsceneVars: {
+		Point: Vector3,
+		UnusedPoint: Vector3,
+		Angle: Vector3,
+	},
+
+	ObjCutsceneDone: number,
+	CutsceneObjSpawn: number,
+}
+
 return table.freeze({
 	Flags = Flags,
 })

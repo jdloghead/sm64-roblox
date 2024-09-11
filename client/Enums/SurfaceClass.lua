@@ -16,6 +16,11 @@ return {
 	SLIPPERY = 0x0014, -- Slippery
 	NOT_SLIPPERY = 0x0015, -- Non-slippery, climbable
 
+	HARD = 0x0030, -- Hard floor (Always has fall damage)
+	HARD_SLIPPERY = 0x0035, -- Hard and slippery (Always has fall damage)
+	HARD_VERY_SLIPPERY = 0x0036, -- Hard and very slippery (Always has fall damage)
+	HARD_NOT_SLIPPERY = 0x0037, -- Hard and Non-slippery (Always has fall damage)
+
 	SHALLOW_QUICKSAND = 0x0021, -- Shallow quicksand (depth of 10 units)
 	DEEP_QUICKSAND = 0x0022, -- Quicksand (lethal, slow, depth of 160 units)
 	INSTANT_QUICKSAND = 0x0023, -- Quicksand (lethal, instant)
