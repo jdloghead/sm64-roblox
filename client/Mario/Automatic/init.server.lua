@@ -1,14 +1,7 @@
 --!strict
 
-----------------------------------------------FLAGS------------------------------------------------
--- From HackerSM64 (https://github.com/HackerN64/HackerSM64/blob/9ef945296b2f56d11702a636e85f5543e2f07669/src/game/mario_actions_automatic.c#L295)
--- Better hangable ceil controls.
--- 	* Fast hanging transition
--- 	* Slow down on sharp turns to avoid falling off
--- 	* Move at 16 units of speed (depending on joystick magnitude)
--- 	* Only fall down if pressing A or B instead of having to let go of A (and hold it down all the time)
-local FFLAG_BETTER_HANGING = false
----------------------------------------------------------------------------------------------------
+local ClientCore = script.Parent.Parent
+local FFlags = require(ClientCore.FFlags)
 
 local System = require(script.Parent)
 local Animations = System.Animations
@@ -257,14 +250,14 @@ end)
 local function updateHangMoving(m: Mario)
 	local stepResult
 	local nextPos = Vector3.zero
-	local maxSpeed = FFLAG_BETTER_HANGING and (m.IntendedMag / 2.0) or 4.0
+	local maxSpeed = FFlags.BETTER_HANGING and (m.IntendedMag / 2.0) or 4.0
 
 	m.ForwardVel += 1.0
 	if m.ForwardVel > maxSpeed then
 		m.ForwardVel = maxSpeed
 	end
 
-	if FFLAG_BETTER_HANGING then
+	if FFlags.BETTER_HANGING then
 		local turnRange = 0x800
 		local dYaw = Util.AbsAngleDiff(m.FaceAngle.Y, m.IntendedYaw) -- 0x0 is turning forwards, 0x8000 is turning backwards
 
@@ -317,7 +310,7 @@ end
 DEF_ACTION(Action.START_HANGING, function(m: Mario)
 	m.ActionTimer += 1
 
-	if FFLAG_BETTER_HANGING then
+	if FFlags.BETTER_HANGING then
 		-- immediately go into hanging if controller stick is pointed far enough in
 		-- any direction, and it has been at least a frame
 		if m.Input:Has(InputFlags.NONZERO_ANALOG) and m.IntendedMag > 16.0 and m.ActionTimer > 1 then
@@ -362,7 +355,7 @@ DEF_ACTION(Action.HANGING, function(m: Mario)
 		return m:SetAction(Action.HANG_MOVING, m.ActionArg)
 	end
 
-	if FFLAG_BETTER_HANGING then
+	if FFlags.BETTER_HANGING then
 		-- Only let go if A or B is pressed
 		if m.Input:Has(InputFlags.A_PRESSED, InputFlags.B_PRESSED) then
 			return m:SetAction(Action.FREEFALL, 0)
@@ -393,7 +386,7 @@ DEF_ACTION(Action.HANGING, function(m: Mario)
 end)
 
 DEF_ACTION(Action.HANG_MOVING, function(m: Mario)
-	if FFLAG_BETTER_HANGING then
+	if FFlags.BETTER_HANGING then
 		-- Only let go if A or B is pressed
 		if m.Input:Has(InputFlags.A_PRESSED, InputFlags.B_PRESSED) then
 			return m:SetAction(Action.FREEFALL, 0)
@@ -412,7 +405,7 @@ DEF_ACTION(Action.HANG_MOVING, function(m: Mario)
 		return m:SetAction(Action.FREEFALL, 0)
 	end
 
-	if FFLAG_BETTER_HANGING then
+	if FFlags.BETTER_HANGING then
 		-- Determine animation speed from forward velocity
 		m:SetAnimationWithAccel(
 			bit32.btest(m.ActionArg, 1) and Animations.MOVE_ON_WIRE_NET_RIGHT or Animations.MOVE_ON_WIRE_NET_LEFT,
@@ -430,7 +423,7 @@ DEF_ACTION(Action.HANG_MOVING, function(m: Mario)
 		m:PlaySound(Sounds.ACTION_HANGING_STEP)
 	end
 
-	if FFLAG_BETTER_HANGING then
+	if FFlags.BETTER_HANGING then
 		if m.Input:Has(InputFlags.NO_MOVEMENT) then
 			if m.AnimFrame > 6 then
 				m.ActionArg = bit32.bxor(m.ActionArg, 1)

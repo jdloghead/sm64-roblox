@@ -1,16 +1,5 @@
 --!strict
 
-----------------------------------------------FLAGS------------------------------------------------
--- Calls onReset when mario is considered to be in a dead state
-local FFLAG_AUTO_RESET_ON_DEAD = true
--- If Mario should spawn on SpawnLocations respectively
-local FFLAG_USE_SPAWNLOCATIONS = false
--- If the rendered character shouldn't have the position interpolated between frames
-local FFLAG_NO_INTERP = false
--- If the update deltatime surpasses (1 / x), don't go higher. Default is the 10FPS interval.
-local FFLAG_DELTA_MAX = 1 / 10
----------------------------------------------------------------------------------------------------
-
 local Core = script.Parent
 
 if Core:GetAttribute("HotLoading") then
@@ -31,6 +20,7 @@ local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ContextActionService = game:GetService("ContextActionService")
 
+local FFlags = require(script.FFlags)
 local Shared = require(Core.Shared)
 local Sounds = Shared.Sounds
 
@@ -259,17 +249,13 @@ local function updateController(controller: Controller, humanoid: Humanoid?)
 		and not TAS_INPUT_OVERRIDE
 	then
 		if not mario.Action:Has(Enums.ActionFlags.SWIMMING, Enums.ActionFlags.HANGING) then
-			if
-				controller.ButtonDown:Has(Buttons.A_BUTTON)
-				and not (controller.ButtonDown:Has(Buttons.B_BUTTON) or controller.ButtonPressed:Has(Buttons.Z_TRIG))
-			then
-				controller.ButtonPressed:Set(Buttons.A_BUTTON)
+			if controller.ButtonDown:Has(Buttons.A_BUTTON) and not controller.ButtonPressed:Has(Buttons.A_BUTTON) then
+				controller.ButtonPressed:Add(Buttons.A_BUTTON)
 			end
 		end
 	end
 end
 
-ContextActionService:BindAction("MarioDebug", processAction, false, Enum.KeyCode.P)
 ContextActionService:BindAction("CommandWalk", processAction, false, Enum.KeyCode.LeftControl)
 ContextActionService:BindAction("TASInputForceToggle", processAction, false, Enum.KeyCode.RightControl)
 bindInput(Buttons.B_BUTTON, "B", Enum.UserInputType.MouseButton1, Enum.KeyCode.ButtonX)
@@ -281,6 +267,10 @@ bindInput(
 	Enum.KeyCode.ButtonL2,
 	Enum.KeyCode.ButtonR2
 )
+
+if (not FFlags.DEBUG_OFF_INGAME) or RunService:IsStudio() then
+	ContextActionService:BindAction("MarioDebug", processAction, false, Enum.KeyCode.P)
+end
 
 -- JPAD buttons
 --     ^
@@ -594,7 +584,7 @@ local function onReset()
 
 	local roblox = Vector3.yAxis * 100
 
-	if FFLAG_USE_SPAWNLOCATIONS then
+	if FFlags.USE_SPAWNLOCATIONS then
 		local spawnPos, faceAngle = Util.GetSpawnPosition()
 		mario.FaceAngle = faceAngle
 		roblox = spawnPos
@@ -689,7 +679,7 @@ local function update(dt: number)
 	Util.DebugCollisionFaces(mario.Wall, mario.Ceil, mario.Floor)
 	Util.DebugWater(mario.WaterLevel)
 
-	subframe += math.min(now - lastUpdate, FFLAG_DELTA_MAX) * (STEP_RATE * simSpeed)
+	subframe += math.min(now - lastUpdate, FFlags.DELTA_MAX) * (STEP_RATE * simSpeed)
 	lastUpdate = now
 
 	--! This code interferes with obtaining the caps normally.
@@ -752,7 +742,7 @@ local function update(dt: number)
 
 	-- Auto reset logic (Optional)
 	-- Remove if you have your own solutions
-	if FFLAG_AUTO_RESET_ON_DEAD then
+	if FFlags.AUTO_RESET_ON_DEAD then
 		--stylua: ignore
 		local function isDead(): boolean
 			local action = mario.Action()
@@ -852,7 +842,7 @@ local function update(dt: number)
 			end
 
 			if alignCF then
-				local nextCF = if FFLAG_NO_INTERP then goalCF else prevCF:Lerp(goalCF, subframe)
+				local nextCF = if FFlags.NO_CHAR_INTERP then goalCF else prevCF:Lerp(goalCF, subframe)
 
 				-- stylua: ignore
 				cf = if mario.AnimSkipInterp > 0
@@ -863,7 +853,7 @@ local function update(dt: number)
 			end
 
 			if humanoid then
-				local nextCamOffset = if FFLAG_NO_INTERP
+				local nextCamOffset = if FFlags.NO_CHAR_INTERP
 					then goalCameraOffset
 					else prevCameraOffset:Lerp(goalCameraOffset, subframe)
 				humanoid.CameraOffset = nextCamOffset

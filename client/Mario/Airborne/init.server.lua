@@ -1,10 +1,7 @@
 --!strict
 
-----------------------------------------------FLAGS------------------------------------------------
--- From SM64Plus (https://github.com/MorsGames/sm64plus/blob/master/src/game/mario_actions_airborne.c#L1290)
--- Makes Mario do wall sliding (instead of timer with bonking), as seen in the modern games.
-local FFLAG_WALL_SLIDING = false
----------------------------------------------------------------------------------------------------
+local ClientCore = script.Parent.Parent
+local FFlags = require(ClientCore.FFlags)
 
 local System = require(script.Parent)
 local Animations = System.Animations
@@ -1113,7 +1110,7 @@ DEF_ACTION(Action.SOFT_BONK, function(m: Mario)
 	return false
 end)
 
-if FFLAG_WALL_SLIDING then
+if FFlags.WALL_SLIDING then
 	DEF_ACTION(Action.WALL_SLIDE, function(m: Mario)
 		m.ActionTimer += 1
 		m:SetAnimationWithAccel(Animations.START_WALLKICK, 1)
@@ -1187,7 +1184,7 @@ DEF_ACTION(Action.AIR_HIT_WALL, function(m: Mario)
 	end
 
 	m.ActionTimer += 1
-	if FFLAG_WALL_SLIDING then
+	if FFlags.WALL_SLIDING then
 		if m.Input:Has(InputFlags.A_PRESSED) then
 			return kickFirstie()
 		else

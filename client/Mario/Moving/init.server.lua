@@ -1,11 +1,7 @@
 --!strict
 
-----------------------------------------------FLAGS------------------------------------------------
--- Makes Mario turn faster and get slowed down when in Action.WALKING and the analog stick is
--- held back a bit, to prevent inconvenient turns. (e.g walking off a platform because Mario
--- didn't do insta-turning)
-local FFLAG_FAST_TURNING = false
----------------------------------------------------------------------------------------------------
+local ClientCore = script.Parent.Parent
+local FFlags = require(ClientCore.FFlags)
 
 local System = require(script.Parent)
 local Animations = System.Animations
@@ -1045,7 +1041,7 @@ DEF_ACTION(Action.WALKING, function(m: Mario)
 
 	if analogStickHeldBack(m) and m.ForwardVel >= 16 then
 		return m:SetAction(Action.TURNING_AROUND)
-	elseif FFLAG_FAST_TURNING and analogStickHeldBack(m, 0x2000) then
+	elseif FFlags.FAST_TURNING and analogStickHeldBack(m, 0x2000) then
 		if m.ForwardVel > -4.0 and m.ForwardVel <= 12.0 then
 			-- Slow down depending on face angle difference
 			local dYaw = Util.AbsAngleDiff(m.FaceAngle.Y, m.IntendedYaw)

@@ -4,11 +4,6 @@ local Util = {
 	Scale = 1 / 20,
 }
 
-----------------------------------------------FLAGS------------------------------------------------
--- Don't show debug long raycasts that hit nothing
-local FFLAG_RAY_DBG_IGNORE_LONG_NIL = false
-----------------------------------------------------------------------------------------------------
-
 local CollectionService = game:GetService("CollectionService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
@@ -16,6 +11,8 @@ local Core = script.Parent.Parent
 local RNG = Random.new()
 
 local Enums = require(Core.Client.Enums)
+local FFlags = require(Core.Client.FFlags)
+
 local SpawnPicker: () -> SpawnLocation? = require(script.SpawnPicker)
 
 local SurfaceClass = Enums.SurfaceClass
@@ -361,7 +358,7 @@ function Util.Raycast(pos: Vector3, dir: Vector3, maybeParams: RaycastParams?, w
 	local result = root:Raycast(pos, dir, params)
 
 	local length = result and result.Distance or dir.Magnitude
-	if script:GetAttribute("Debug") and not (FFLAG_RAY_DBG_IGNORE_LONG_NIL and length > 256 and result == nil) then
+	if script:GetAttribute("Debug") and not (FFlags.RAY_DBG_IGNORE_LONG_NIL and length > 256 and result == nil) then
 		local color = Color3.new(result and 0 or 1, result and 1 or 0, 0)
 
 		local line = Instance.new("LineHandleAdornment")

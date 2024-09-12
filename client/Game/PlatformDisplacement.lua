@@ -1,20 +1,11 @@
 --!strict
 local PlatformDisplacement = {}
 
-----------------------------------------------FLAGS------------------------------------------------
--- Use inertia velocity for airborne (Mario only).
--- This is ported from Rovertronic's hack BTCM.
--- https://github.com/rovertronic/BTCM-Public-Repo/blob/782195ed025b5aaa8cb04b8c9bdc45fd34305356/src/game/platform_displacement.c#L185
-local FFLAG_USE_INERTIA = false
--- If it should always apply uncapped +Y displacement no matter what.
--- Otherwise, stick to the ground (until the target has gone airborne).
-local FFLAG_DISPLACE_POS_Y = false
----------------------------------------------------------------------------------------------------
-
 local SM64 = script.Parent.Parent
 local Util = require(SM64.Util)
 local Enums = require(SM64.Enums)
 local Mario = require(SM64.Mario)
+local FFlags = require(SM64.FFlags)
 
 local Action = Enums.Action
 local ActionFlags = Enums.ActionFlags
@@ -59,14 +50,14 @@ function PlatformDisplacement.ApplyPlatformDisplacement(o: Mario | Object, isMar
 	local faceAngleAdd, positionAdd = getPlatformInertia(platform, Util.ToRoblox(o.Position))
 	positionAdd = Vector3.new(
 		positionAdd.X,
-		math.clamp(positionAdd.Y, -64, FFLAG_DISPLACE_POS_Y and math.huge or 64),
+		math.clamp(positionAdd.Y, -64, FFlags.DISPLACE_POS_Y and math.huge or 64),
 		positionAdd.Z
 	)
 
 	if isMario then
 		local m = o :: Mario
 
-		if FFLAG_USE_INERTIA then
+		if FFlags.USE_INERTIA then
 			m.Inertia = positionAdd
 		end
 
@@ -101,7 +92,7 @@ function PlatformDisplacement.ApplyMarioPlatformDisplacement(m: Mario)
 		sMarioInertiaFirstFrame = true
 		sShouldApplyInertia = true
 		return PlatformDisplacement.ApplyPlatformDisplacement(m, true, platform)
-	elseif sShouldApplyInertia and FFLAG_USE_INERTIA then
+	elseif sShouldApplyInertia and FFlags.USE_INERTIA then
 		PlatformDisplacement.ApplyMarioInertia(m)
 	end
 end
