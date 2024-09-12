@@ -12,7 +12,7 @@ local FFLAGS = {
 	-- Use inertia velocity for airborne (Mario only).
 	-- This is (technically) ported from Rovertronic's hack BTCM.
 	-- https://github.com/rovertronic/BTCM-Public-Repo/blob/master/src/game/platform_displacement.c#L185
-	USE_INERTIA = true,
+	USE_INERTIA = false,
 
 	-- If it should always apply uncapped +Y displacement no matter what.
 	-- Otherwise, stick to the ground (until the target has gone airborne).
@@ -23,12 +23,12 @@ local FFLAGS = {
 	-----------------------COLLISION-----------------------
 	-- fixes wallcucking, by picking the best wall depending on Mario's
 	-- face angle. (See: https://youtu.be/TSCzC-WECw8?t=42)
-	FIX_WALLCUCKING = true,
+	FIX_WALLCUCKING = false,
 
 	-- instead of quarter-step with no verification, it will be a single step,
 	-- then fire a ray between old position and next position to avoid clipping
 	-- and other weird geometry things (See: https://youtu.be/TSCzC-WECw8?t=90)
-	CONTINUOUS_INSTEAD_OF_QSTEP = true,
+	CONTINUOUS_INSTEAD_OF_QSTEP = false,
 
 	-- the StationaryGroundStep function does not check for wall collisions in
 	-- certain conds. if you have weird geometry or pushing walls, keep this on
@@ -41,7 +41,7 @@ local FFLAGS = {
 
 	-- From SM64Plus (https://github.com/MorsGames/sm64plus/blob/master/src/game/mario_actions_airborne.c#L1290)
 	-- Makes Mario do wall sliding (instead of timer with bonking), as seen in the modern games.
-	WALL_SLIDING = true,
+	WALL_SLIDING = false,
 
 	-- From HackerSM64 (https://github.com/HackerN64/HackerSM64/blob/master/src/game/mario_actions_automatic.c#L295)
 	-- Better hangable ceil controls.
@@ -49,11 +49,11 @@ local FFLAGS = {
 	-- 	* Slow down on sharp turns to avoid falling off
 	-- 	* Move at 16 units of speed (depending on joystick magnitude)
 	-- 	* Only fall down if pressing A or B instead of having to let go of A (and hold it down all the time)
-	BETTER_HANGING = true,
+	BETTER_HANGING = false,
 
 	-- Makes Mario turn faster and slow down when doing sharp-ish turns. Only applies
 	-- when Mario is in Action.WALKING and slow enough.
-	FAST_TURNING = true,
+	FAST_TURNING = false,
 	-----------------------------------------------------
 
 	-----------------------UPDATE-----------------------
