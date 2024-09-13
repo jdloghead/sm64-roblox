@@ -2,8 +2,9 @@
 
 local FFLAGS = {
 	-----------------------CHEAT-----------------------
-	-- Walk on every single slope angle.
+	-- Walk on every single slope angle without sliding.
 	FLOOR_NEVER_SLIPPERY = false,
+
 	-- God mode, atleast health wise.
 	DEGREELESSNESS_MODE = false,
 	---------------------------------------------------
@@ -17,7 +18,7 @@ local FFLAGS = {
 	-- If it should always apply uncapped +Y displacement no matter what.
 	-- Otherwise, stick to the ground (until the target has gone airborne).
 	-- This requires USE_INERTIA for better behavior.
-	DISPLACE_POS_Y = false,
+	PLATFORM_DISPLACE_POS_Y = false,
 	-----------------------------------------------------
 
 	-----------------------COLLISION-----------------------
@@ -27,7 +28,7 @@ local FFLAGS = {
 
 	-- instead of quarter-step with no verification, it will be a single step,
 	-- then fire a ray between old position and next position to avoid clipping
-	-- and other weird geometry things (See: https://youtu.be/TSCzC-WECw8?t=90)
+	-- and other weird collision things (See: https://youtu.be/TSCzC-WECw8?t=90)
 	CONTINUOUS_INSTEAD_OF_QSTEP = false,
 
 	-- the StationaryGroundStep function does not check for wall collisions in
@@ -48,7 +49,7 @@ local FFLAGS = {
 	-- 	* Fast hanging transition
 	-- 	* Slow down on sharp turns to avoid falling off
 	-- 	* Move at 16 units of speed (depending on joystick magnitude)
-	-- 	* Only fall down if pressing A or B instead of having to let go of A (and hold it down all the time)
+	-- 	* Only fall down if pressing A or B instead of having to let go of A and haivng to hold it down all the time
 	BETTER_HANGING = false,
 
 	-- Makes Mario turn faster and slow down when doing sharp-ish turns. Only applies

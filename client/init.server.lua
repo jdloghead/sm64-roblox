@@ -1008,6 +1008,8 @@ RunService.Heartbeat:Connect(function(dt: number)
 	debug.profileend()
 end)
 
+onReset()
+
 while true do
 	local success = pcall(function()
 		return StarterGui:SetCore("ResetButtonCallback", reset)

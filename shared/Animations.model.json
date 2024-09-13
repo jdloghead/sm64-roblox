@@ -1813,7 +1813,7 @@
 			},
 
 			"attributes": {
-				"Loop": false,
+				"Loop": true,
 				"NumFrames": 4,
 				"StartAddress": "546B40"
 			}

@@ -1110,67 +1110,66 @@ DEF_ACTION(Action.SOFT_BONK, function(m: Mario)
 	return false
 end)
 
-if FFlags.WALL_SLIDING then
-	DEF_ACTION(Action.WALL_SLIDE, function(m: Mario)
-		m.ActionTimer += 1
-		m:SetAnimationWithAccel(Animations.START_WALLKICK, 1)
+-- CUSTOM ACTION
+DEF_ACTION(Action.WALL_SLIDE, function(m: Mario)
+	m.ActionTimer += 1
+	m:SetAnimationWithAccel(Animations.START_WALLKICK, 1)
 
-		m.GfxAngle = Vector3int16.new(m.FaceAngle.Y, 0)
-		if m.Input:Has(InputFlags.A_PRESSED) then
-			m.AnimSkipInterp = 2
-			m:SetForwardVel(32.0)
-			m.FaceAngle += Vector3int16.new(0, 0x8000, 0)
-			m.ParticleFlags:Add(ParticleFlags.VERTICAL_STAR)
-			return m:SetAction(Action.WALL_KICK_AIR, 0)
-		end
+	m.GfxAngle = Vector3int16.new(m.FaceAngle.Y, 0)
+	if m.Input:Has(InputFlags.A_PRESSED) then
+		m.AnimSkipInterp = 2
+		m:SetForwardVel(32.0)
+		m.FaceAngle += Vector3int16.new(0, 0x8000, 0)
+		m.ParticleFlags:Add(ParticleFlags.VERTICAL_STAR)
+		return m:SetAction(Action.WALL_KICK_AIR, 0)
+	end
 
-		if m.Input:Has(InputFlags.Z_PRESSED) then
-			m.FaceAngle += Vector3int16.new(0, 0x8000, 0)
-			return m:SetAction(Action.GROUND_POUND)
-		end
+	if m.Input:Has(InputFlags.Z_PRESSED) then
+		m.FaceAngle += Vector3int16.new(0, 0x8000, 0)
+		return m:SetAction(Action.GROUND_POUND)
+	end
 
-		local AirStepResult = m:PerformAirStep(0)
-		local wall = m.Wall
+	local AirStepResult = m:PerformAirStep(0)
+	local wall = m.Wall
 
-		-- No!!! Manual fix!!!
-		if wall then
+	-- No!!! Manual fix!!!
+	if wall then
 			-- stylua: ignore
 			local angleDiff = Util.AbsAngleDiff(
 				Util.SignedShort(m.FaceAngle.Y - 0x8000),
 				Util.Atan2s(wall.Normal.Z, wall.Normal.X)
 			)
 
-			if angleDiff >= 0x4000 then
-				wall = nil :: any
-			end
+		if angleDiff >= 0x4000 then
+			wall = nil :: any
 		end
+	end
 
-		if AirStepResult == AirStep.NONE and not wall then
-			m.AnimSkipInterp = 2
-			m:SetAction(Action.FREEFALL, 0)
-			m.FaceAngle += Vector3int16.new(0, 0x8000, 0)
-		elseif AirStepResult == AirStep.LANDED then
-			m.AnimSkipInterp = 2
-			m:SetAction(Action.FREEFALL_LAND, 0)
-			m.FaceAngle += Vector3int16.new(0, 0x8000, 0)
-		elseif AirStepResult == AirStep.HIT_LAVA_WALL then
-			return lavaBoostOnWall(m)
+	if AirStepResult == AirStep.NONE and not wall then
+		m.AnimSkipInterp = 2
+		m:SetAction(Action.FREEFALL, 0)
+		m.FaceAngle += Vector3int16.new(0, 0x8000, 0)
+	elseif AirStepResult == AirStep.LANDED then
+		m.AnimSkipInterp = 2
+		m:SetAction(Action.FREEFALL_LAND, 0)
+		m.FaceAngle += Vector3int16.new(0, 0x8000, 0)
+	elseif AirStepResult == AirStep.HIT_LAVA_WALL then
+		return lavaBoostOnWall(m)
+	end
+
+	if m.ActionTimer < 16 then
+		m.Velocity = Util.SetY(m.Velocity, -1.0)
+	else
+		if m.Velocity.Y < -31.0 then
+			m.Velocity = Util.SetY(m.Velocity, -31.0)
 		end
+	end
 
-		if m.ActionTimer < 16 then
-			m.Velocity = Util.SetY(m.Velocity, -1.0)
-		else
-			if m.Velocity.Y < -31.0 then
-				m.Velocity = Util.SetY(m.Velocity, -31.0)
-			end
-		end
-
-		m:SetForwardVel(1.0)
-		m.ParticleFlags:Add(ParticleFlags.DUST)
-		m.GfxAngle = Vector3int16.new(0, m.FaceAngle.Y + 0x8000, 0)
-		return false
-	end)
-end
+	m:SetForwardVel(1.0)
+	m.ParticleFlags:Add(ParticleFlags.DUST)
+	m.GfxAngle = Vector3int16.new(0, m.FaceAngle.Y + 0x8000, 0)
+	return false
+end)
 
 DEF_ACTION(Action.AIR_HIT_WALL, function(m: Mario)
 	if (m :: any).HeldObj ~= nil then

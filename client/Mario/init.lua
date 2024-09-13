@@ -2173,8 +2173,14 @@ function Mario.ExecuteAction(m: Mario): number
 		return 0
 	end
 
-	m.AnimFrame += 1
-	m.AnimFrame %= (m.AnimFrameCount + 1)
+	-- Careful Spongebob!
+	local animLooped = if m.AnimCurrent then (not not m.AnimCurrent:GetAttribute("Loop")) else false
+	if animLooped then
+		m.AnimFrame += 1
+		m.AnimFrame %= (m.AnimFrameCount + 1)
+	elseif m.AnimFrame < m.AnimFrameCount then
+		m.AnimFrame += 1
+	end
 
 	if m.AnimAccel > 0 then
 		m.AnimAccelAssist += m.AnimAccel
@@ -2371,6 +2377,10 @@ function Mario.ExecuteAction(m: Mario): number
 			m.Action:Set(Action.IDLE)
 			break
 		end
+	end
+
+	if m.AnimReset then
+		m.AnimFrame = 0
 	end
 
 	m:SinkInQuicksand()

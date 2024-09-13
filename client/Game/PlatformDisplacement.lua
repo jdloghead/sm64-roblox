@@ -50,7 +50,7 @@ function PlatformDisplacement.ApplyPlatformDisplacement(o: Mario | Object, isMar
 	local faceAngleAdd, positionAdd = getPlatformInertia(platform, Util.ToRoblox(o.Position))
 	positionAdd = Vector3.new(
 		positionAdd.X,
-		math.clamp(positionAdd.Y, -64, FFlags.DISPLACE_POS_Y and math.huge or 64),
+		math.clamp(positionAdd.Y, -64, FFlags.PLATFORM_DISPLACE_POS_Y and math.huge or 64),
 		positionAdd.Z
 	)
 
