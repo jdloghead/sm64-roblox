@@ -78,18 +78,19 @@ end
 
 local function checkFallDamage(m: Mario, hardFallAction: number): boolean
 	local fallHeight = m.PeakHeight - m.Position.Y
-	local damageHeight = 1150
+	local damageHeight = FFlags.FALL_DAMAGE_HEIGHT
+	local hardDamageHeight = FFlags.HARD_FALL_DAMAGE_HEIGHT
 
 	if m.Action() == Action.TWIRLING or m:GetFloorType() == SurfaceClass.BURNING then
 		return false
 	end
 
 	if m.Velocity.Y < -55.0 then
-		if fallHeight > 3000 then
+		if (hardDamageHeight ~= -1) and fallHeight > hardDamageHeight then
 			m.HurtCounter += if m.Flags:Has(MarioFlags.CAP_ON_HEAD) then 16 else 24
 			m:PlaySound(Sounds.MARIO_ATTACKED)
 			return m:SetAction(hardFallAction, 4)
-		elseif fallHeight > damageHeight and not m:FloorIsSlippery() then
+		elseif (damageHeight ~= -1) and fallHeight > damageHeight and not m:FloorIsSlippery() then
 			m.HurtCounter += if m.Flags:Has(MarioFlags.CAP_ON_HEAD) then 8 else 12
 			m:PlaySound(Sounds.MARIO_ATTACKED)
 			m.SquishTimer = 30

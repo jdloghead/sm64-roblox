@@ -55,6 +55,11 @@ local FFLAGS = {
 	-- Makes Mario turn faster and slow down when doing sharp-ish turns. Only applies
 	-- when Mario is in Action.WALKING and slow enough.
 	FAST_TURNING = false,
+
+	-- The distance that Mario should fall to take damage. Set to -1 to disable.
+	FALL_DAMAGE_HEIGHT = 1150,
+	-- The distance that Mario should fall to take more damage and knockback. Set to -1 to disable.
+	HARD_FALL_DAMAGE_HEIGHT = 3000,
 	-----------------------------------------------------
 
 	-----------------------UPDATE-----------------------

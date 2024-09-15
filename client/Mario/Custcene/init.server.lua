@@ -74,6 +74,17 @@ local function cutscenePutCapOn(m: Mario)
 	m:PlaySound(Sounds.ACTION_UNKNOWN43E)
 end
 
+--[[
+ * cutscene_take_cap_off: Put Mario's cap on.
+ * Clears "cap on head" flag, sets "cap in hand" flag, plays sound
+ * SOUND_ACTION_UNKNOWN43D.
+]]
+local function cutsceneTakeCapOff(m: Mario)
+	m.Flags:Remove(MarioFlags.CAP_ON_HEAD)
+	m.Flags:Add(MarioFlags.CAP_IN_HAND)
+	m:PlaySound(Sounds.ACTION_UNKNOWN43D)
+end
+
 local function generalStarDanceHandler(m: Mario, isInWater: boolean)
 	local dialogID = 0
 
@@ -121,6 +132,15 @@ local function launchMarioUntilLand(m: Mario, endAction: number, animation: Anim
 	end
 
 	return airStepLanded
+end
+
+-- save menu handler
+local function handleSaveMenu(m: Mario)
+	-- but we don't have any save menu to handle...
+	if m:IsAnimPastEnd() then
+		m.FaceAngle += Vector3int16.new(0, 0x8000, 0)
+		return m:SetAction(Action.IDLE)
+	end
 end
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -310,10 +330,18 @@ DEF_ACTION(Action.SHOCKED, function(m: Mario)
 end)
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- Spawning states
+-- Spawning/Exiting states
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+----------------------------------------
+-- GROUP: spawning
+----------------------------------------
+
 DEF_ACTION(Action.SPAWN_SPIN_AIRBORNE, function(m: Mario)
+	if m.Position.Y < m.WaterLevel - 100 then
+		return m:SetWaterPlungeAction()
+	end
+
 	m:SetForwardVel(m.ForwardVel)
 
 	if m:PerformAirStep() == AirStep.LANDED then
@@ -344,6 +372,133 @@ DEF_ACTION(Action.SPAWN_SPIN_LANDING, function(m: Mario)
 	return false
 end)
 
+DEF_ACTION(Action.SPAWN_NO_SPIN_AIRBORNE, function(m: Mario)
+	launchMarioUntilLand(m, Action.SPAWN_NO_SPIN_LANDING, Animations.GENERAL_FALL, 0.0)
+
+	if m.Position.Y < m.WaterLevel - 100 then
+		return m:SetWaterPlungeAction()
+	end
+
+	return false
+end)
+
+----------------------------------------
+-- GROUP: exiting & exit lands
+----------------------------------------
+
+--[[
+ * act_exit_airborne: Jump out of a level after collecting a Power Star (no
+ ** sparkles)
+ * Mario always faces a level entrance when he launches out of it, whether he
+ * died or he collected a star/key. Because of that, we need him to move away
+ * from the painting by setting his speed to -32.0f and have him face away from
+ * the painting by adding 0x8000 (180 deg) to his graphics angle. We also set
+ * his heal counter to 31 to restore 7.75 units of his health, and enable the
+ * particle flag that generates sparkles.
+]]
+local function exitAirborne(m: Mario, vel: number): boolean
+	m.ActionTimer += 1
+
+	if 15 < m.ActionTimer and launchMarioUntilLand(m, Action.EXIT_LAND_SAVE_DIALOG, Animations.GENERAL_FALL, vel) then
+		-- heal Mario
+		m.HealCounter = 31
+	end
+
+	-- rotate him to face away from the entrance
+	m.GfxAngle += Vector3int16.new(0, 0x8000, 0)
+	m.ParticleFlags:Add(ParticleFlags.SPARKLES)
+
+	return false
+end
+
+DEF_ACTION(Action.EXIT_AIRBORNE, function(m: Mario)
+	return exitAirborne(m, -32.0)
+end)
+
+DEF_ACTION(Action.FALLING_EXIT_AIRBORNE, function(m: Mario)
+	return exitAirborne(m, 0)
+end)
+
+DEF_ACTION(Action.EXIT_LAND_SAVE_DIALOG, function(m: Mario)
+	local animFrame: number = 0
+
+	m:StationaryGroundStep()
+	m:PlayLandingSoundOnce(Sounds.ACTION_TERRAIN_LANDING)
+
+	-- Determine type of exit
+	if m.ActionState == 0 then
+		m:SetAnimation(m.ActionArg == 0 and Animations.GENERAL_LAND or Animations.LAND_FROM_SINGLE_JUMP)
+
+		if m:IsAnimPastEnd() then
+			--	if gLastCompletedCourseNum ~= COURSE_BITDW and gLastCompletedCourseNum ~= COURSE_BITFS then
+			--		enableTimeStop()
+			--	end
+
+			-- setMenuMode(MenuMode.RENDER_COURSE_COMPLETE_SCREEN)
+			-- gSaveOptSelectIndex = MenuOpt.NONE
+
+			m.ActionState = 3 -- star exit with cap
+		end
+		if not m.Flags:Has(MarioFlags.CAP_ON_HEAD) then
+			m.ActionState = 2
+		end
+
+		--	if gLastCompletedCourseNum == Course.BITDW or gLastCompletedCourseNum == Course.BITFS then
+		--	m.ActionState = 1 -- key exit
+		--	end
+	elseif m.ActionState == 1 then
+		-- key exit
+		animFrame = m:SetAnimation(Animations.THROW_CATCH_KEY)
+
+		if animFrame == -1 then
+			-- spawn key
+			--! fallthrough
+		end
+		if animFrame == 67 then
+			m:PlaySound(Sounds.ACTION_KEY_SWISH)
+			--! fallthrough
+		end
+		if animFrame == 83 then
+			m:PlaySound(Sounds.ACTION_PAT_BACK)
+			--! fallthrough
+		end
+		if animFrame == 111 then
+			m:PlaySound(Sounds.ACTION_UNKNOWN45C)
+			-- no break
+		end
+
+		handleSaveMenu(m)
+	elseif m.ActionState == 2 then
+		-- exit without cap
+		animFrame = m:SetAnimation(Animations.MISSING_CAP)
+		if (animFrame >= 18 and animFrame < 55) or (animFrame >= 112 and animFrame < 134) then
+			m.BodyState.HandState:Set(MarioHands.OPEN)
+		end
+
+		if not (animFrame < 109) and animFrame < 154 then
+			m.BodyState.EyeState = MarioEyes.HALF_CLOSED
+		end
+
+		handleSaveMenu(m)
+	elseif m.ActionState == 3 then
+		-- exit with cap
+		animFrame = m:SetAnimation(Animations.TAKE_CAP_OFF_THEN_ON)
+
+		if animFrame == 12 then
+			cutsceneTakeCapOff(m)
+		elseif animFrame == 37 or animFrame == 53 then
+			m:PlaySound(Sounds.ACTION_BRUSH_HAIR)
+		elseif animFrame == 82 then
+			cutscenePutCapOn(m)
+		end
+
+		handleSaveMenu(m)
+	end
+
+	m.GfxAngle += Vector3int16.new(0, 0x8000, 0)
+	return false
+end)
+
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Stuck in ground states
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -367,15 +522,21 @@ end)
 -- Star dance states
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-local function actStarDance(m: Mario)
+local function lookAtCamera(m: Mario)
+	local camera = workspace.CurrentCamera
+
 	-- Pretty sure cameraYaw isn't updated rapidly
-	if m.ActionTimer == 0 then
-		local camera = workspace.CurrentCamera
-		local lookVector = camera.CFrame.LookVector
-		local cameraYaw = Util.Atan2s(-lookVector.Z, -lookVector.X)
-		m.FaceAngle = Util.SetY(m.FaceAngle, cameraYaw)
+	if (m.ActionTimer ~= 0) or camera == nil then
+		return
 	end
 
+	local lookVector = camera.CFrame.LookVector
+	local cameraYaw = Util.Atan2s(-lookVector.Z, -lookVector.X)
+	m.FaceAngle = Util.SetY(m.FaceAngle, cameraYaw)
+end
+
+local function actStarDance(m: Mario)
+	lookAtCamera(m)
 	m:SetAnimation(m.ActionState == 2 and Animations.RETURN_FROM_STAR_DANCE or Animations.STAR_DANCE)
 
 	generalStarDanceHandler(m, false)
@@ -390,14 +551,7 @@ DEF_ACTION(Action.STAR_DANCE_EXIT, actStarDance)
 DEF_ACTION(Action.STAR_DANCE_NO_EXIT, actStarDance)
 
 DEF_ACTION(Action.STAR_DANCE_WATER, function(m: Mario)
-	-- Pretty sure cameraYaw isn't updated rapidly
-	if m.ActionTimer == 0 then
-		local camera = workspace.CurrentCamera
-		local lookVector = camera.CFrame.LookVector
-		local cameraYaw = Util.Atan2s(-lookVector.Z, -lookVector.X)
-		m.FaceAngle = Util.SetY(m.FaceAngle, cameraYaw)
-	end
-
+	lookAtCamera(m)
 	m:SetAnimation(m.ActionState == 2 and Animations.RETURN_FROM_WATER_STAR_DANCE or Animations.WATER_STAR_DANCE)
 
 	m.GfxPos = Vector3.zero

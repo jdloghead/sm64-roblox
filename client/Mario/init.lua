@@ -153,7 +153,15 @@ local function solveContinuousClip(m: Mario, nextPos: Vector3, heightOff: number
 	return maybeNextPos
 end
 
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- ACTIONGROUP CANCELS
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 local function checkCommonObjectCancels(m: Mario): any
+	if m.Position.Y < m.WaterLevel - 100 then
+		return m:SetWaterPlungeAction()
+	end
+
 	if m.Input:Has(InputFlags.SQUISHED) then
 		return m:DropAndSetAction(Action.SQUISHED, 0)
 	end
@@ -182,7 +190,11 @@ local function checkForInstantQuicksand(m: Mario): any
 	return false
 end
 
-local function commonStationaryCancels(m: Mario): boolean?
+local function checkCommonStationaryCancels(m: Mario): boolean?
+	if m.Position.Y < m.WaterLevel - 100 then
+		return m:SetWaterPlungeAction()
+	end
+
 	if m.Action() ~= Action.SQUISHED and m.Input:Has(InputFlags.SQUISHED) then
 		m:DropAndSetAction(Action.SQUISHED, 0)
 		return true
@@ -201,7 +213,11 @@ local function commonStationaryCancels(m: Mario): boolean?
 	return nil
 end
 
-local function commonMovingCancels(m: Mario): boolean?
+local function checkCommonMovingCancels(m: Mario): boolean?
+	if m.Position.Y < m.WaterLevel - 100 then
+		return m:SetWaterPlungeAction()
+	end
+
 	if m.Input:Has(InputFlags.SQUISHED) then
 		return m:DropAndSetAction(Action.SQUISHED, 0)
 	end
@@ -220,6 +236,10 @@ local function commonMovingCancels(m: Mario): boolean?
 end
 
 local function commonAirborneCancels(m: Mario): boolean?
+	if m.Position.Y < m.WaterLevel - 100 then
+		return m:SetWaterPlungeAction()
+	end
+
 	if m.Input:Has(InputFlags.SQUISHED) then
 		return m:DropAndSetAction(Action.SQUISHED, 0)
 	end
@@ -229,6 +249,39 @@ local function commonAirborneCancels(m: Mario): boolean?
 	end
 
 	m.QuicksandDepth = 0.0
+	return nil
+end
+
+local function checkCommonSubmergedCancels(m: Mario): boolean?
+	if m.Position.Y > m.WaterLevel - 80 then
+		if m.WaterLevel - 80 > m.FloorHeight then
+			m.Position = Util.SetY(m.Position, m.WaterLevel - 80)
+		else
+			--! If you press B to throw the shell, there is a ~5 frame window
+			--  where your held object is the shell, but you are not in the
+			--  water shell swimming action. This allows you to hold the water
+			--  shell on land (used for cloning in DDD).
+			if m.Action() == Action.WATER_SHELL_SWIMMING and (m :: any).HeldObj ~= nil then
+				(m :: any).HeldObj.InteractStatus:Set(InteractionStatus.STOP_RIDING);
+				(m :: any).HeldObj = nil
+			end
+
+			return m:TransitionSubmergedToWalking()
+		end
+	end
+
+	if m.Health < 0x100 and not m.Action:Has(ActionFlags.INTANGIBLE, ActionFlags.INVULNERABLE) then
+		m:SetAction(Action.DROWNING, 0)
+	end
+
+	return nil
+end
+
+local function checkCommonAutomaticCancels(m: Mario): boolean?
+	if m.Position.Y < m.WaterLevel - 100 then
+		return m:SetWaterPlungeAction()
+	end
+
 	return nil
 end
 
@@ -1102,6 +1155,16 @@ function Mario.UpdatePunchSequence(m: Mario)
 	return false
 end
 
+function Mario.TransitionSubmergedToWalking(m: Mario): boolean
+	m.AngleVel *= 0
+
+	if (m :: any).HeldObj == nil then
+		return m:SetAction(Action.WALKING)
+	else
+		return m:SetAction(Action.HOLD_WALKING)
+	end
+end
+
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- PHYSICS STEP
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1874,6 +1937,8 @@ function Mario.SwitchHandGrabPos(m: Mario, callContext: string)
 		-- away.
 	end
 
+	-- Set HOLP outside anyways, until I figure out what on earth
+	-- callcontext and this function is all about...
 	bodyState.HeldObjLastPos = m.Position + (Vector3.new(Util.Sins(m.FaceAngle.Y), 0, Util.Coss(m.FaceAngle.Y)) * 50)
 
 	return nil
@@ -2120,6 +2185,10 @@ function Mario.PlayFarFallSound(m: Mario)
 		return
 	end
 
+	if (FFlags.FALL_DAMAGE_HEIGHT == -1) and (FFlags.HARD_FALL_DAMAGE_HEIGHT == -1) then
+		return
+	end
+
 	local action = m.Action
 
 	if action() == Action.TWIRLING then
@@ -2134,7 +2203,7 @@ function Mario.PlayFarFallSound(m: Mario)
 		return
 	end
 
-	if m.PeakHeight - m.Position.Y > 1150 then
+	if m.PeakHeight - m.Position.Y > FFlags.FALL_DAMAGE_HEIGHT then
 		m:PlaySound(Sounds.MARIO_WAAAOOOW)
 		m.Flags:Add(MarioFlags.FALLING_FAR)
 	end
@@ -2255,7 +2324,7 @@ function Mario.ExecuteAction(m: Mario): number
 		return 0
 	end
 
-	-- Careful Spongebob!
+	-- Don't loop AnimFrame if the animation states not looped.
 	local animLooped = if m.AnimCurrent then (not not m.AnimCurrent:GetAttribute("Loop")) else false
 	if animLooped then
 		m.AnimFrame += 1
@@ -2293,61 +2362,35 @@ function Mario.ExecuteAction(m: Mario): number
 			local group = bit32.band(id, ActionGroups.GROUP_MASK)
 			local cancel: boolean?
 
-			if group ~= ActionGroups.SUBMERGED and m.Position.Y < m.WaterLevel - 100 then
-				cancel = m:SetWaterPlungeAction()
-			else
-				if group == ActionGroups.AIRBORNE then
-					cancel = commonAirborneCancels(m)
+			if group == ActionGroups.AIRBORNE then
+				cancel = commonAirborneCancels(m)
 
-					if not cancel then
-						m:PlayFarFallSound()
-					end
-				elseif group == ActionGroups.SUBMERGED then
-					if m.Position.Y > m.WaterLevel - 80 then
-						if m.WaterLevel - 80 > m.FloorHeight then
-							m.Position = Util.SetY(m.Position, m.WaterLevel - 80)
-						else
-							--! If you press B to throw the shell, there is a ~5 frame window
-							--  where your held object is the shell, but you are not in the
-							--  water shell swimming action. This allows you to hold the water
-							--  shell on land (used for cloning in DDD).
-							if m.Action() == Action.WATER_SHELL_SWIMMING and (m :: any).HeldObj ~= nil then
-								(m :: any).HeldObj.InteractStatus:Set(InteractionStatus.STOP_RIDING);
-								(m :: any).HeldObj = nil
-							end
-
-							m.AngleVel *= 0
-							if (m :: any).HeldObj == nil then
-								cancel = m:SetAction(Action.WALKING)
-							else
-								cancel = m:SetAction(Action.HOLD_WALKING)
-							end
-						end
-					end
-
-					if m.Health < 0x100 and not m.Action:Has(ActionFlags.INTANGIBLE, ActionFlags.INVULNERABLE) then
-						cancel = m:SetAction(Action.DROWNING, 0)
-					end
-
-					if not cancel then
-						m.QuicksandDepth = 0
-						m.BodyState.HeadAngle *= Vector3int16.new(1, 0, 0)
-					end
-				elseif group == ActionGroups.MOVING then
-					cancel = commonMovingCancels(m)
-				elseif group == ActionGroups.STATIONARY then
-					cancel = commonStationaryCancels(m)
-				elseif group == ActionGroups.CUTSCENE then
-					if checkForInstantQuicksand(m) then
-						cancel = true
-					end
-				elseif group == ActionGroups.OBJECT then
-					cancel = checkCommonObjectCancels(m)
+				if not cancel then
+					m:PlayFarFallSound()
 				end
+			elseif group == ActionGroups.SUBMERGED then
+				cancel = checkCommonSubmergedCancels(m)
 
-				if cancel == nil then
-					cancel = action(m)
+				if not cancel then
+					m.QuicksandDepth = 0
+					m.BodyState.HeadAngle *= Vector3int16.new(1, 0, 0)
 				end
+			elseif group == ActionGroups.MOVING then
+				cancel = checkCommonMovingCancels(m)
+			elseif group == ActionGroups.STATIONARY then
+				cancel = checkCommonStationaryCancels(m)
+			elseif group == ActionGroups.CUTSCENE then
+				if checkForInstantQuicksand(m) then
+					cancel = true
+				end
+			elseif group == ActionGroups.OBJECT then
+				cancel = checkCommonObjectCancels(m)
+			elseif group == ActionGroups.AUTOMATIC then
+				cancel = checkCommonAutomaticCancels(m)
+			end
+
+			if cancel == nil then
+				cancel = action(m)
 			end
 
 			if not cancel then
