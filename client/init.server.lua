@@ -643,7 +643,7 @@ local function onReset()
 	mario:SetAction(Action.SPAWN_SPIN_AIRBORNE)
 end
 
-local function update(dt: number)
+local function update()
 	local character = player.Character
 
 	if not character then
@@ -1004,7 +1004,7 @@ end)
 
 RunService.Heartbeat:Connect(function(dt: number)
 	debug.profilebegin("SM64::update")
-	update(dt)
+	update()
 	debug.profileend()
 end)
 

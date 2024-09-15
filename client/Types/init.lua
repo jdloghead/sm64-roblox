@@ -96,7 +96,7 @@ export type MarioState = {
 
 	WaterSurfacePseudoFloor: RaycastResult?,
 
-	CeilHeightSquish: number?,
+	CeilHeightSquish: number,
 	CeilHeight: number,
 	FloorHeight: number,
 	FloorAngle: number,

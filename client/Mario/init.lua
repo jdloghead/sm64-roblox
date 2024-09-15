@@ -153,6 +153,85 @@ local function solveContinuousClip(m: Mario, nextPos: Vector3, heightOff: number
 	return maybeNextPos
 end
 
+local function checkCommonObjectCancels(m: Mario): any
+	if m.Input:Has(InputFlags.SQUISHED) then
+		return m:DropAndSetAction(Action.SQUISHED, 0)
+	end
+
+	if m.Health < 0x100 then
+		return m:DropAndSetAction(Action.STANDING_DEATH, 0)
+	end
+
+	if m:UpdateQuicksand(0.5) then
+		return true
+	end
+
+	return nil
+end
+
+local function checkForInstantQuicksand(m: Mario): any
+	local floorType = m:GetFloorType()
+	if
+		(floorType == SurfaceClass.INSTANT_QUICKSAND or floorType == SurfaceClass.INSTANT_MOVING_QUICKSAND)
+		and m.Action:Has(ActionFlags.INVULNERABLE)
+		and m.Action() ~= Action.QUICKSAND_DEATH
+	then
+		return m:DropAndSetAction(Action.QUICKSAND_DEATH, 0)
+	end
+
+	return false
+end
+
+local function commonStationaryCancels(m: Mario): boolean?
+	if m.Action() ~= Action.SQUISHED and m.Input:Has(InputFlags.SQUISHED) then
+		m:DropAndSetAction(Action.SQUISHED, 0)
+		return true
+	end
+
+	if m.Action() ~= Action.UNKNOWN_0002020E then
+		if m.Health < 0x100 then
+			return m:DropAndSetAction(Action.STANDING_DEATH, 0)
+		end
+	end
+
+	if m:UpdateQuicksand(0.5) then
+		return true
+	end
+
+	return nil
+end
+
+local function commonMovingCancels(m: Mario): boolean?
+	if m.Input:Has(InputFlags.SQUISHED) then
+		return m:DropAndSetAction(Action.SQUISHED, 0)
+	end
+
+	if not m.Action:Has(ActionFlags.INVULNERABLE) then
+		if m.Health < 0x100 then
+			return m:SetAction(Action.STANDING_DEATH, 0)
+		end
+	end
+
+	if m:UpdateQuicksand(0.5) then
+		return true
+	end
+
+	return nil
+end
+
+local function commonAirborneCancels(m: Mario): boolean?
+	if m.Input:Has(InputFlags.SQUISHED) then
+		return m:DropAndSetAction(Action.SQUISHED, 0)
+	end
+
+	if m:GetFloorType() == SurfaceClass.VERTICAL_WIND and m.Action:Has(ActionFlags.ALLOW_VERTICAL_WIND_ACTION) then
+		return m:DropAndSetAction(Action.VERTICAL_WIND, 0)
+	end
+
+	m.QuicksandDepth = 0.0
+	return nil
+end
+
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- BINDINGS
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1699,10 +1778,11 @@ function Mario.UpdateGeometryInputs(m: Mario)
 					m.CeilHeight = ceilHeightSquish
 				end
 			else
-				ceilHeightSquish = math.huge
+				ceilHeightSquish = ceilHeight
 				ceilByFloorHeight = nil
 			end
-			m.CeilHeightSquish = ceilHeightSquish
+		else
+			ceilHeightSquish = ceilHeight
 		end
 
 		if m.Position.Y > m.FloorHeight + 100 then
@@ -1716,6 +1796,8 @@ function Mario.UpdateGeometryInputs(m: Mario)
 		if m.Position.Y < m.GasLevel - 100 then
 			m.Input:Add(InputFlags.IN_POISON_GAS)
 		end
+
+		m.CeilHeightSquish = ceilHeightSquish
 	else
 		-- Mario gets "killed" here when no floor has been found
 		-- LevelTriggerWarp(m, WarpOp.DEATH);
@@ -2215,25 +2297,8 @@ function Mario.ExecuteAction(m: Mario): number
 				cancel = m:SetWaterPlungeAction()
 			else
 				if group == ActionGroups.AIRBORNE then
-					m:PlayFarFallSound()
+					cancel = commonAirborneCancels(m)
 
-					local function commonAirborneCancels(): boolean?
-						if m.Input:Has(InputFlags.SQUISHED) then
-							return m:DropAndSetAction(Action.SQUISHED, 0)
-						end
-
-						if
-							m:GetFloorType() == SurfaceClass.VERTICAL_WIND
-							and m.Action:Has(ActionFlags.ALLOW_VERTICAL_WIND_ACTION)
-						then
-							return m:DropAndSetAction(Action.VERTICAL_WIND, 0)
-						end
-
-						m.QuicksandDepth = 0.0
-						return nil
-					end
-
-					cancel = commonAirborneCancels()
 					if not cancel then
 						m:PlayFarFallSound()
 					end
@@ -2269,83 +2334,15 @@ function Mario.ExecuteAction(m: Mario): number
 						m.BodyState.HeadAngle *= Vector3int16.new(1, 0, 0)
 					end
 				elseif group == ActionGroups.MOVING then
-					local function commonMovingCancels(): boolean?
-						if m.Input:Has(InputFlags.SQUISHED) then
-							return m:DropAndSetAction(Action.SQUISHED, 0)
-						end
-
-						if not m.Action:Has(ActionFlags.INVULNERABLE) then
-							if m.Health < 0x100 then
-								return m:SetAction(Action.STANDING_DEATH, 0)
-							end
-						end
-
-						if m:UpdateQuicksand(0.5) then
-							return true
-						end
-
-						return nil
-					end
-
-					cancel = commonMovingCancels()
+					cancel = commonMovingCancels(m)
 				elseif group == ActionGroups.STATIONARY then
-					local function commonStationaryCancels(): boolean?
-						if m.Input:Has(InputFlags.SQUISHED) then
-							return m:DropAndSetAction(Action.SQUISHED, 0)
-						end
-
-						if m.Action() ~= Action.UNKNOWN_0002020E then
-							if m.Health < 0x100 then
-								return m:DropAndSetAction(Action.STANDING_DEATH, 0)
-							end
-						end
-
-						if m:UpdateQuicksand(0.5) then
-							return true
-						end
-
-						return nil
-					end
-
-					cancel = commonStationaryCancels()
+					cancel = commonStationaryCancels(m)
 				elseif group == ActionGroups.CUTSCENE then
-					local function checkForInstantQuicksand(): any
-						local floorType = m:GetFloorType()
-						if
-							(
-								floorType == SurfaceClass.INSTANT_QUICKSAND
-								or floorType == SurfaceClass.INSTANT_MOVING_QUICKSAND
-							)
-							and m.Action:Has(ActionFlags.INVULNERABLE)
-							and m.Action() ~= Action.QUICKSAND_DEATH
-						then
-							return m:DropAndSetAction(Action.QUICKSAND_DEATH, 0)
-						end
-
-						return false
-					end
-
-					if checkForInstantQuicksand() then
+					if checkForInstantQuicksand(m) then
 						cancel = true
 					end
 				elseif group == ActionGroups.OBJECT then
-					local function checkCommonObjectCancels(): any
-						if m.Input:Has(InputFlags.SQUISHED) then
-							return m:DropAndSetAction(Action.SQUISHED, 0)
-						end
-
-						if m.Health < 0x100 then
-							return m:DropAndSetAction(Action.STANDING_DEATH, 0)
-						end
-
-						if m:UpdateQuicksand(0.5) then
-							return true
-						end
-
-						return nil
-					end
-
-					cancel = checkCommonObjectCancels()
+					cancel = checkCommonObjectCancels(m)
 				end
 
 				if cancel == nil then
@@ -2473,6 +2470,7 @@ function Mario.new(): Mario
 		SlideVelX = 0,
 		SlideVelZ = 0,
 
+		CeilHeightSquish = 0,
 		CeilHeight = 0,
 		FloorHeight = 0,
 		FloorAngle = 0,
