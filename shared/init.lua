@@ -306,6 +306,13 @@ local SoundTable = {
 	ACTION_TERRAIN_JUMP_STONE = Sounds.ACTION_TERRAIN_LANDING_STONE,
 }
 
+-- Hmm.....
+for _, instance in pairs(Sounds:GetChildren()) do
+	if (instance:IsA("Sound") or instance:IsA("Configuration")) and not SoundTable[instance.Name] then
+		SoundTable[instance.Name] = instance
+	end
+end
+
 task.spawn(function()
 	local ContentProvider = game:GetService("ContentProvider")
 	local preload = {}
@@ -319,12 +326,6 @@ end)
 
 setmetatable(SoundTable, {
 	__index = function(_, k)
-		local Existing = Sounds:FindFirstChild(k)
-		if Existing then
-			rawset(SoundTable, k, Existing)
-			return Existing
-		end
-
 		warn("UNKNOWN SOUND:", k)
 		return nil
 	end,

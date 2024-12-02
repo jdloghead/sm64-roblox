@@ -123,10 +123,10 @@ local function generalStarDanceHandler(m: Mario, isInWater: boolean)
 end
 
 local function launchMarioUntilLand(m: Mario, endAction: number, animation: Animation, forwardVel: number): boolean
-	local airStepLanded = false
 	m:SetForwardVel(forwardVel)
 	m:SetAnimation(animation)
-	airStepLanded = m:PerformAirStep(0) == AirStep.LANDED
+
+	local airStepLanded = m:PerformAirStep(0) == AirStep.LANDED
 	if airStepLanded then
 		m:SetAction(endAction)
 	end
@@ -396,7 +396,7 @@ end)
  * his heal counter to 31 to restore 7.75 units of his health, and enable the
  * particle flag that generates sparkles.
 ]]
-local function exitAirborne(m: Mario, vel: number): boolean
+local function actExitAirborne(m: Mario, vel: number): boolean
 	m.ActionTimer += 1
 
 	if 15 < m.ActionTimer and launchMarioUntilLand(m, Action.EXIT_LAND_SAVE_DIALOG, Animations.GENERAL_FALL, vel) then
@@ -412,11 +412,11 @@ local function exitAirborne(m: Mario, vel: number): boolean
 end
 
 DEF_ACTION(Action.EXIT_AIRBORNE, function(m: Mario)
-	return exitAirborne(m, -32.0)
+	return actExitAirborne(m, -32.0)
 end)
 
 DEF_ACTION(Action.FALLING_EXIT_AIRBORNE, function(m: Mario)
-	return exitAirborne(m, 0)
+	return actExitAirborne(m, 0)
 end)
 
 DEF_ACTION(Action.EXIT_LAND_SAVE_DIALOG, function(m: Mario)
@@ -430,7 +430,7 @@ DEF_ACTION(Action.EXIT_LAND_SAVE_DIALOG, function(m: Mario)
 		m:SetAnimation(m.ActionArg == 0 and Animations.GENERAL_LAND or Animations.LAND_FROM_SINGLE_JUMP)
 
 		if m:IsAnimPastEnd() then
-			--	if gLastCompletedCourseNum ~= COURSE_BITDW and gLastCompletedCourseNum ~= COURSE_BITFS then
+			--	if gLastCompletedCourseNum ~= Course.BITDW and gLastCompletedCourseNum ~= Course.BITFS then
 			--		enableTimeStop()
 			--	end
 

@@ -553,7 +553,6 @@ end
 
 local character = assert(player.Character)
 local pivot = character:GetPivot()
-mario.Position = Util.ToSM64(pivot.Position)
 
 goalCF = pivot
 prevCF = pivot
@@ -679,7 +678,7 @@ local function update()
 	Util.DebugCollisionFaces(mario.Wall, mario.Ceil, mario.Floor)
 	Util.DebugWater(mario.WaterLevel)
 
-	subframe += math.min(now - lastUpdate, FFlags.DELTA_MAX) * (STEP_RATE * simSpeed)
+	subframe += math.min(now - lastUpdate, FFlags.UPDATE_DELTA_MAX) * (STEP_RATE * simSpeed)
 	lastUpdate = now
 
 	--! This code interferes with obtaining the caps normally.
@@ -993,6 +992,7 @@ local function update()
 	end
 end
 
+onReset()
 reset.Event:Connect(onReset)
 shared.LocalMario = mario
 
@@ -1007,8 +1007,6 @@ RunService.Heartbeat:Connect(function(dt: number)
 	update()
 	debug.profileend()
 end)
-
-onReset()
 
 while true do
 	local success = pcall(function()

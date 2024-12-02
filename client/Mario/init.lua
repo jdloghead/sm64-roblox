@@ -39,6 +39,8 @@ local GroundStep = Enums.GroundStep
 
 local InteractionStatus = Enums.Interaction.Status
 
+type dict = { [string]: any }
+
 export type BodyState = Types.BodyState
 export type Controller = Types.Controller
 export type MarioState = Types.MarioState
@@ -55,11 +57,14 @@ export type Class = Mario
 local SHORT_TO_RAD = (2 * math.pi) / 0x10000
 local sMovingSandSpeeds = { 12, 8, 4, 0 }
 local Vector3XZ = Vector3.new(1, 0, 1)
-local RAD90 = (math.pi / 2)
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- HELPERS
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+local function safeUnit(v: Vector3): Vector3
+	return if v.Magnitude > 0 then v.Unit else v
+end
 
 local function solveBestWallFromAngle(walls: { RaycastResult }, angle: number): RaycastResult?
 	local angleDiffStore = math.huge
@@ -75,6 +80,25 @@ local function solveBestWallFromAngle(walls: { RaycastResult }, angle: number): 
 	end
 
 	return best
+end
+
+local function slopeHeightFromFaceAng(m: Mario): number
+	-- Depends on where Mario is facing on the slope.
+	-- Upwards the slope: +Y
+	-- Downwards the slope: -Y
+	-- Side-to-side: 0
+
+	local floorNormal: Vector3 = m.Floor and m.Floor.Normal or Vector3.yAxis
+	local marioFacing = m.FaceAngle.Y * SHORT_TO_RAD
+
+	local angleDiff = 0
+	if math.abs(floorNormal.Y) < 0.9 and math.abs(m.ForwardVel) >= 0.5 then
+		-- LOL
+		local faceVector = CFrame.Angles(0, marioFacing, 0).LookVector
+		angleDiff = faceVector:Dot(floorNormal)
+	end
+
+	return math.deg(angleDiff)
 end
 
 local function clipMario(m: Mario, nextPos: Vector3, heightOff: number?): Vector3
@@ -97,22 +121,15 @@ local function clipMario(m: Mario, nextPos: Vector3, heightOff: number?): Vector
 				maybeNextPos = Util.SetY(nextClip.Position + (nextClip.Normal * 5), nextPos.Y)
 			elseif math.abs(normalY) >= 0.01 then
 				if (normalY >= 0.01 and not ignoreFloor) or (normalY <= -0.01 and not ignoreCeil) then
-					local dir = 16 * math.sign(normalY)
+					local dir = 30 * math.sign(normalY)
 					maybeNextPos = Util.SetY(nextClip.Position, nextPos.Y + dir)
+
+					-- erererrrerer im sans undertale
+					if normalY <= -0.01 then
+						maybeNextPos += safeUnit(nextClip.Normal * Vector3XZ) * 52
+					end
 				end
 			end
-		end
-
-		-- Move maybeNextPos up/down depending on the angle we're looking at from the normal,
-		-- so steep floor angles can be detected. This intentionally keeps the de-facto speed
-		-- behavior intact.
-		local slopeDisplaceApplicable = math.abs(m.Position.Y - m.FloorHeight) < 1.0
-		local surfNormal = m.Floor and m.Floor.Normal or Vector3.yAxis
-		local surfAngle = m.FloorAngle
-
-		if math.abs(surfNormal.Y) < 0.8 and slopeDisplaceApplicable then
-			local angleDiff = ((SHORT_TO_RAD * (surfAngle - m.FaceAngle.Y)) - RAD90) / RAD90
-			maybeNextPos += Vector3.yAxis * 16 * math.clamp(angleDiff, -1, 1) * math.sign(m.ForwardVel)
 		end
 
 		return maybeNextPos
@@ -179,6 +196,7 @@ end
 
 local function checkForInstantQuicksand(m: Mario): any
 	local floorType = m:GetFloorType()
+
 	if
 		(floorType == SurfaceClass.INSTANT_QUICKSAND or floorType == SurfaceClass.INSTANT_MOVING_QUICKSAND)
 		and m.Action:Has(ActionFlags.INVULNERABLE)
@@ -1362,7 +1380,9 @@ function Mario.PerformGroundStep(m: Mario): number
 		local intendedVel = m.Velocity
 		local intendedX = m.Position.X + floor.Normal.Y * (intendedVel.X / steps)
 		local intendedZ = m.Position.Z + floor.Normal.Y * (intendedVel.Z / steps)
-		local intendedY = m.Position.Y
+		-- Move intendedY up/down depending on the angle we're looking at from the floor normal,
+		-- so steep floor angles can be detected.
+		local intendedY = m.Position.Y + slopeHeightFromFaceAng(m)
 
 		local intendedPos = Vector3.new(intendedX, intendedY, intendedZ)
 		stepResult = m:PerformGroundQuarterStep(intendedPos)
@@ -1865,7 +1885,15 @@ function Mario.UpdateGeometryInputs(m: Mario)
 		-- Mario gets "killed" here when no floor has been found
 		-- LevelTriggerWarp(m, WarpOp.DEATH);
 		-- Let's just set Mario's health for now.
-		m.Health = 0xFF
+		if m.Health > 0x100 then
+			m.Health = 0xFF
+			print("[!] No floor found under Mario.")
+			if workspace.StreamingEnabled then
+				print(
+					"StreamingEnabled might be interfering with your work if you're trying to move Mario across large distances!"
+				)
+			end
+		end
 	end
 end
 
@@ -2122,10 +2150,10 @@ local function checkDeathBarrier(m: Mario)
 			not m.Flags:Has(MarioFlags.FALLING_FAR)
 		then
 			m:PlaySoundIfNoFlag(Sounds.MARIO_WAAAOOOW, MarioFlags.FALLING_FAR)
-
-			-- Let's just set Mario's health for now
-			m.Health = 0xFF
 		end
+
+		-- Let's just set Mario's health for now
+		m.Health = 0xFF
 	end
 end
 
@@ -2326,6 +2354,7 @@ function Mario.ExecuteAction(m: Mario): number
 
 	-- Don't loop AnimFrame if the animation states not looped.
 	local animLooped = if m.AnimCurrent then (not not m.AnimCurrent:GetAttribute("Loop")) else false
+
 	if animLooped then
 		m.AnimFrame += 1
 		m.AnimFrame %= (m.AnimFrameCount + 1)
@@ -2420,7 +2449,13 @@ function Mario.ExecuteAction(m: Mario): number
 	end
 
 	if m.AnimReset then
-		m.AnimFrame = 0
+		-- Previously it was (m.AnimFrame = 0), which would
+		-- just ignore StartFrame. SetAnimation takes care of
+		-- StartFrame stuff as intended, but also applies
+		-- AnimReset (previously only setting to 0), which
+		-- then effectively ditches that process of using
+		-- StartFrame in the first place. Yikes!
+		m.AnimFrame = if m.AnimCurrent then (m.AnimCurrent:GetAttribute("StartFrame") or 0) else 0
 	end
 
 	m:SinkInQuicksand()
@@ -2434,6 +2469,20 @@ function Mario.ExecuteAction(m: Mario): number
 	end
 
 	return m.ParticleFlags()
+end
+
+-- Mario's primary behavior update function.
+function Mario.BhvUpdate(m: Mario): number
+	local particleFlags = m:ExecuteAction()
+
+	-- Mario code updates MarioState's versions of position etc, so we need
+	-- to sync it with the Mario object
+	local marioObj = m.MarioObj
+	if marioObj then
+		m:CopyMarioStateToObject(marioObj)
+	end
+
+	return particleFlags
 end
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -2554,6 +2603,56 @@ function Mario.new(): Mario
 	}
 
 	return setmetatable(state, Mario)
+end
+
+function Mario.Init(m: Mario, maybeSpawnInfo: dict?): Mario
+	local spawnInfo: dict = if typeof(maybeSpawnInfo) ~= "table" then {} else maybeSpawnInfo
+	local marioObj = m.MarioObj
+
+	m.ActionTimer = 0
+	m.FramesSinceA = 0xFF
+	m.FramesSinceB = 0xFF
+
+	m.InvincTimer = 0
+	m.HealCounter = 0
+	m.HurtCounter = 0
+
+	m.Flags:Set(MarioFlags.NORMAL_CAP, MarioFlags.CAP_ON_HEAD)
+
+	m.ForwardVel = 0
+	m.SquishTimer = 0
+
+	m.CapTimer = 0
+	m.QuicksandDepth = 0
+
+	m.HeldObj = nil
+	m.RiddenObj = nil
+	m.UsedObj = nil
+
+	m.FaceAngle = spawnInfo.FaceAngle or m.FaceAngle
+	m.Position = spawnInfo.StartPos or m.Position
+	m.FloorHeight = Util.FindFloor(m.Position)
+	m.WaterLevel = Util.GetWaterLevel(m.Position)
+	m.AnimCurrent = nil
+
+	m.AngleVel = Vector3int16.new()
+	m.Velocity = Vector3.zero
+	m.Inertia = Vector3.zero
+
+	if m.Position.Y < m.FloorHeight then
+		m.Position = Util.SetY(m.Position, m.FloorHeight)
+	end
+
+	m.GfxPos *= Vector3XZ
+
+	m.Action:Set(m.Position.Y <= (m.WaterLevel - 100) and Action.WATER_IDLE or Action.IDLE)
+
+	m:ResetBodyState()
+	m.BodyState.PunchState = 0
+
+	m:CopyMarioStateToObject(marioObj)
+
+	return m
 end
 
 return Mario

@@ -22,18 +22,35 @@ local FFLAGS = {
 	-----------------------------------------------------
 
 	-----------------------COLLISION-----------------------
+	-- Level boundaries related stuff.
+	LEVEL_BOUNDARY_MAX = 0x2000, -- Default range level area (0x2000) is 16384x16384 (-8192 to +8192 in x and z)
+	FLOOR_LOWER_LIMIT = -11000,
+	FLOOR_LOWER_LIMIT_MISC = -11000 + 1000,
+
+	-- If (abs(normal.Y) < WALL_NORMAL), then it is a wall. Otherwise, it's a floor/ceil.
+	WALL_NORMAL = 0.01,
+
 	-- fixes wallcucking, by picking the best wall depending on Mario's
 	-- face angle. (See: https://youtu.be/TSCzC-WECw8?t=42)
 	FIX_WALLCUCKING = false,
 
-	-- instead of quarter-step with no verification, it will be a single step,
+	-- Instead of quarter-step with no verification, it will be a single step,
 	-- then fire a ray between old position and next position to avoid clipping
-	-- and other weird collision things (See: https://youtu.be/TSCzC-WECw8?t=90)
+	-- and other collision problems. (See: https://youtu.be/TSCzC-WECw8?t=90)
 	CONTINUOUS_INSTEAD_OF_QSTEP = false,
 
 	-- the StationaryGroundStep function does not check for wall collisions in
 	-- certain conds. if you have weird geometry or pushing walls, keep this on
 	SGS_ALWAYS_PERFORMS_STEPS = true,
+
+	-- Use a fake floor when there is no floor, aka the floor raycast hits nothing.
+	-- This flag respects Workspace.FallenPartsDestroyHeight.
+	-- It's up to you to decide if you want to use this, the upsides and downsides are:
+	-- [+] Removes Out-Of-Bounds invisible walls
+	-- [+] Farther uncapped level bounds vertically
+	-- [-] Likely easier to fall through the map (truncated bounds)
+	-- [-] No level bounds
+	FAKE_DEATH_BARRIER_FLOOR = false,
 	------------------------------------------------------
 
 	-----------------------GAMEPLAY-----------------------
@@ -49,7 +66,7 @@ local FFLAGS = {
 	-- 	* Fast hanging transition
 	-- 	* Slow down on sharp turns to avoid falling off
 	-- 	* Move at 16 units of speed (depending on joystick magnitude)
-	-- 	* Only fall down if pressing A or B instead of having to let go of A and haivng to hold it down all the time
+	-- 	* Only fall down if pressing A or B instead of having to let go of A + hold it down all the time
 	BETTER_HANGING = false,
 
 	-- Makes Mario turn faster and slow down when doing sharp-ish turns. Only applies
@@ -68,7 +85,7 @@ local FFLAGS = {
 
 	-- If the update() delta timer is past this number, cap there.
 	-- Default is the 10FPS Interval.
-	DELTA_MAX = 1 / 10,
+	UPDATE_DELTA_MAX = 1 / 10,
 	----------------------------------------------------
 
 	-----------------------VISUAL-----------------------

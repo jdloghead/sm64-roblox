@@ -13,21 +13,22 @@ local RNG = Random.new()
 local Enums = require(Core.Client.Enums)
 local FFlags = require(Core.Client.FFlags)
 
-local SpawnPicker: () -> SpawnLocation? = require(script.SpawnPicker)
-
 local SurfaceClass = Enums.SurfaceClass
 
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Helpers
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+local SpawnPicker: () -> SpawnLocation? = require(script.SpawnPicker)
+
 local rayParams = RaycastParams.new()
 rayParams.RespectCanCollide = true
 rayParams.IgnoreWater = true
 
+local VECTOR3_XZ = Vector3.one - Vector3.yAxis
 local SHORT_TO_RAD = (2 * math.pi) / 0x10000
 local RAD_TO_SHORT = 0x10000 / (2 * math.pi)
-local VECTOR3_XZ = Vector3.one - Vector3.yAxis
+local FLIP = CFrame.Angles(0, math.pi, 0)
 
 -- Converts an angle in degrees to sm64's s16 angle units. For example, DEGREES(90) == 0x4000
 local function DEGREES(x: number): number
@@ -68,6 +69,16 @@ floorSurfacePlane.Color3 = Color3.fromRGB(0, 64, 255)
 
 local ceilSurfacePlane = wallSurfacePlane:Clone()
 ceilSurfacePlane.Color3 = Color3.fromRGB(200, 0, 0)
+
+local fakeFloorDeathPlane: RaycastResult = {
+	Instance = Instance.new("Part"),
+	Normal = Vector3.yAxis,
+	Position = Vector3.new(0, -11000, 0),
+	Material = Enum.Material.Plastic,
+	Distance = 0,
+}
+fakeFloorDeathPlane.Instance:SetAttribute("FloorSurfaceClass", "DEATH_PLANE")
+fakeFloorDeathPlane.Instance.Name = "DEATH_PLANE"
 
 local CARDINAL = {
 	-Vector3.xAxis,
@@ -185,9 +196,13 @@ local function randomPositionInPartBounds(part: BasePart): Vector3
 	)
 end
 
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Util
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 -- stylua: ignore
 local function vectorModifier(getArgs: (Vector3 | Vector3int16, number) -> (number, number, number)):
-	((vec: Vector3, value: number) -> Vector3) & 
+	((vec: Vector3, value: number) -> Vector3) &
 	((vec: Vector3int16, value: number) -> Vector3int16)
 
 	return function (vector, new)
@@ -195,10 +210,6 @@ local function vectorModifier(getArgs: (Vector3 | Vector3int16, number) -> (numb
 		return constructor(getArgs(vector, new))
 	end
 end
-
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
--- Util
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 Util.SetX = vectorModifier(function(vector, x)
 	return x, vector.Y, vector.Z
@@ -261,13 +272,12 @@ end
 
 -- Returns Pitch, Yaw and Roll from a CFrame in Signed 16-bit int format.
 function Util.CFrameToSM64Angles(cframe: CFrame): (number, number, number)
-	local lookVector = cframe.LookVector
+	local pitch, yaw, roll = (cframe * FLIP):ToOrientation()
 
-	local pitch = DEGREES(math.deg(math.asin(lookVector.Y)))
-	local yaw = Util.Atan2s(-lookVector.X, -lookVector.Z)
-	local roll = DEGREES(math.deg(math.atan2(lookVector.Y, math.sqrt(lookVector.X ^ 2 + lookVector.Z ^ 2))))
+	-- pitch = math.asin(-lookVector.Y)
+	-- yaw = math.atan2(lookVector.Z, lookVector.X)
 
-	return pitch, yaw, roll
+	return DEGREES(pitch), DEGREES(yaw), DEGREES(roll)
 end
 
 function Util.GetSpawnPosition(): (Vector3, Vector3int16)
@@ -295,7 +305,7 @@ function Util.AngularVelocityToSM64Angles(angularVel: Vector3): (number, number,
 	return pitch, yaw, roll
 end
 
--- borrowed from @poopbarreI
+-- borrowed from @magicoal_nerb
 function Util.GetExtents(part: BasePart): Vector3
 	local cframe = part.CFrame
 	local size = part.Size * 0.5
@@ -401,16 +411,16 @@ end
 function Util.FindFloor(pos: Vector3, dir: Vector3?): (number, RaycastResult?)
 	local dir: Vector3 = typeof(dir) == "Vector3" and dir or -Vector3.yAxis * 15000 / Util.Scale
 	local newPos = pos
-	local height = -11000
+	local height = FFlags.FLOOR_LOWER_LIMIT
 
 	if Core:GetAttribute("TruncateBounds") then
 		local trunc = Vector3int16.new(pos.X, pos.Y, pos.Z)
 
-		if math.abs(trunc.X) >= 0x2000 then
+		if math.abs(trunc.X) >= FFlags.LEVEL_BOUNDARY_MAX then
 			return height, nil
 		end
 
-		if math.abs(trunc.Z) >= 0x2000 then
+		if math.abs(trunc.Z) >= FFlags.LEVEL_BOUNDARY_MAX then
 			return height, nil
 		end
 
@@ -452,6 +462,19 @@ function Util.FindFloor(pos: Vector3, dir: Vector3?): (number, RaycastResult?)
 	end
 	unqueried = nil :: any
 
+	if (result == nil) and FFlags.FAKE_DEATH_BARRIER_FLOOR then
+		local destroyHeight = workspace.FallenPartsDestroyHeight
+		if destroyHeight ~= destroyHeight then -- NaN check
+			destroyHeight = -11000 * Util.Scale
+		else
+			destroyHeight += 5
+		end
+
+		fakeFloorDeathPlane.Position = Util.ToSM64(Vector3.yAxis * destroyHeight)
+		height = fakeFloorDeathPlane.Position.Y
+		result = fakeFloorDeathPlane
+	end
+
 	return height, result
 end
 
@@ -463,11 +486,11 @@ function Util.FindCeil(pos: Vector3, height: number?, dir: Vector3?): (number, R
 	if truncateBounds then
 		local trunc = Vector3int16.new(pos.X, pos.Y, pos.Z)
 
-		if math.abs(trunc.X) >= 0x2000 then
+		if math.abs(trunc.X) >= FFlags.LEVEL_BOUNDARY_MAX then
 			return newHeight, nil
 		end
 
-		if math.abs(trunc.Z) >= 0x2000 then
+		if math.abs(trunc.Z) >= FFlags.LEVEL_BOUNDARY_MAX then
 			return newHeight, nil
 		end
 
@@ -495,6 +518,8 @@ function Util.FindWallCollisions(
 	local walls = {} :: { RaycastResult }
 	local disp = Vector3.zero
 
+	-- Add a small unit so walls always get found when Mario is not moving
+	-- near a wall.
 	local radiusD = (radius + 0.1)
 
 	for _, dir in CARDINAL do
@@ -504,7 +529,7 @@ function Util.FindWallCollisions(
 		if contact then
 			local normal = contact.Normal
 
-			if math.abs(normal.Y) < 0.01 then
+			if math.abs(normal.Y) < FFlags.WALL_NORMAL then
 				local surface = contact.Position
 				local move = (surface - pos) * VECTOR3_XZ
 				local dist = move.Magnitude
@@ -608,7 +633,7 @@ end
 
 -- stylua: ignore
 function Util.FindTaggedPlane(pos: Vector3, tag: string): (number, RaycastResult?)
-	local height = -11000
+	local height = FFlags.FLOOR_LOWER_LIMIT
 	local result = Util.RaycastSM64(
 		pos + (Vector3.yAxis * 5000),
 		Vector3.yAxis * -10000,
@@ -678,6 +703,14 @@ end
 
 function Util.SignedInt(x: number)
 	return -0x80000000 + math.floor(x + 0x80000000) % 0x100000000
+end
+
+function Util.UnsignedShort(x: number)
+	return math.floor(x % 0x10000)
+end
+
+function Util.UnsignedInt(x: number)
+	return math.floor(x % 0x100000000)
 end
 
 function Util.ApproachFloat(current: number, target: number, inc: number, dec: number?): number
