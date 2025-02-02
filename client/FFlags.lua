@@ -50,12 +50,12 @@ local FFLAGS = {
 	-- [+] Farther uncapped level bounds vertically
 	-- [-] Likely easier to fall through the map (truncated bounds)
 	-- [-] No level bounds
-	FAKE_DEATH_BARRIER_FLOOR = false,
+	FAKE_DEATH_BARRIER_FLOOR = true,
 	------------------------------------------------------
 
 	-----------------------GAMEPLAY-----------------------
 	-- If Mario should spawn on SpawnLocations respectively.
-	USE_SPAWNLOCATIONS = false,
+	USE_SPAWNLOCATIONS = true,
 
 	-- From SM64Plus (https://github.com/MorsGames/sm64plus/blob/master/src/game/mario_actions_airborne.c#L1290)
 	-- Makes Mario do wall sliding (instead of timer with bonking), as seen in the modern games.
